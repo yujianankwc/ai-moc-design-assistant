@@ -4,6 +4,8 @@ import { mapProjectStatus } from "@/lib/display-mappers";
 import { listProjectsByDemoUser } from "@/services/project-service";
 import type { ProjectRow } from "@/types/project";
 
+export const dynamic = "force-dynamic";
+
 const mockProjects = [
   {
     id: "p-001",
