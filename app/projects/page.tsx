@@ -6,24 +6,43 @@ import type { ProjectRow } from "@/types/project";
 
 export const dynamic = "force-dynamic";
 
-const mockProjects = [
+type ProjectCardItem = {
+  id: string;
+  name: string;
+  projectType: "轻量" | "专业";
+  status: string;
+  updatedAt: string;
+  viewHref: string;
+  viewLabel: string;
+};
+
+const mockProjects: ProjectCardItem[] = [
   {
     id: "p-001",
     name: "城市街景主题套组",
+    projectType: "专业",
     status: "草稿中",
-    updatedAt: "2026-02-26"
+    updatedAt: "2026-02-26",
+    viewHref: "/projects/p-001",
+    viewLabel: "查看项目方案"
   },
   {
     id: "p-002",
     name: "海岸救援场景套组",
+    projectType: "专业",
     status: "生成中",
-    updatedAt: "2026-02-27"
+    updatedAt: "2026-02-27",
+    viewHref: "/projects/p-002",
+    viewLabel: "查看项目方案"
   },
   {
     id: "p-003",
     name: "太空维修站套组",
+    projectType: "专业",
     status: "已完成",
-    updatedAt: "2026-02-28"
+    updatedAt: "2026-02-28",
+    viewHref: "/projects/p-003",
+    viewLabel: "查看项目方案"
   }
 ];
 
@@ -57,7 +76,7 @@ export default async function ProjectsPage() {
     dbProjects = [];
   }
 
-  const projects =
+  const projects: ProjectCardItem[] =
     dbProjects.length > 0
       ? dbProjects.map((item) => ({
           id: item.id,
@@ -107,17 +126,15 @@ export default async function ProjectsPage() {
                 {project.name}
               </h2>
               <div className="flex items-center gap-2">
-                {"projectType" in project && (
-                  <span
-                    className={`rounded-full px-2 py-1 text-xs ${
-                      project.projectType === "轻量"
-                        ? "bg-blue-50 text-blue-700"
-                        : "bg-emerald-50 text-emerald-700"
-                    }`}
-                  >
-                    {project.projectType}
-                  </span>
-                )}
+                <span
+                  className={`rounded-full px-2 py-1 text-xs ${
+                    project.projectType === "轻量"
+                      ? "bg-blue-50 text-blue-700"
+                      : "bg-emerald-50 text-emerald-700"
+                  }`}
+                >
+                  {project.projectType}
+                </span>
                 <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">
                   {project.status}
                 </span>
@@ -126,10 +143,10 @@ export default async function ProjectsPage() {
             <p className="mt-2 text-xs text-slate-500">最近更新：{project.updatedAt}</p>
             <div className="mt-4">
               <Link
-                href={"viewHref" in project ? project.viewHref : `/projects/${project.id}`}
+                href={project.viewHref}
                 className="text-sm font-medium text-blue-600 hover:text-blue-700"
               >
-                {"viewLabel" in project ? project.viewLabel : "查看项目方案"}
+                {project.viewLabel}
               </Link>
             </div>
           </article>

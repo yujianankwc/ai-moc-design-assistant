@@ -261,7 +261,7 @@ function mapPrimaryGoalToRecommendedText(path: QuickPath) {
 }
 
 function buildThemeTags(summary: QuickGenerationSummary) {
-  const tags = [summary.subjectType, summary.intentType].filter((item) => item !== "unknown");
+  const tags: string[] = [summary.subjectType, summary.intentType].filter((item) => item !== "unknown");
   if (summary.directionBias) tags.push(summary.directionBias);
   if (summary.styleBias) tags.push(summary.styleBias);
   tags.push(`scale:${summary.effectiveScale}`);

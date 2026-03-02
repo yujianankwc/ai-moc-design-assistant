@@ -327,6 +327,8 @@ export function pickQuickSimilarReferences(input: QuickEntryInput) {
     .split(/[\s,，。.!！？、;；:：\-_/|]+/)
     .map((item) => item.trim())
     .filter((item) => item.length >= 2);
+  const styleKey: QuickStyle | null = input.style === "" ? null : input.style;
+  const styleTargets = styleKey ? styleTagWeight[styleKey] : [];
 
   const sorted = [...base].sort((a, b) => {
     const typeA =
@@ -337,10 +339,8 @@ export function pickQuickSimilarReferences(input: QuickEntryInput) {
       input.direction === ""
         ? 0
         : directionTypeWeight[input.direction][b.referenceType];
-    const styleA =
-      input.style === "" ? 0 : a.styleTags.filter((tag) => styleTagWeight[input.style].includes(tag)).length;
-    const styleB =
-      input.style === "" ? 0 : b.styleTags.filter((tag) => styleTagWeight[input.style].includes(tag)).length;
+    const styleA = styleTargets.length === 0 ? 0 : a.styleTags.filter((tag) => styleTargets.includes(tag)).length;
+    const styleB = styleTargets.length === 0 ? 0 : b.styleTags.filter((tag) => styleTargets.includes(tag)).length;
     const scaleA =
       input.scale === "" ? 0 : scaleTypeWeight[input.scale][a.referenceType];
     const scaleB =
@@ -412,8 +412,8 @@ export function saveQuickAIResultToSession(input: {
   window.sessionStorage.setItem(
     QUICK_AI_RESULT_SESSION_KEY,
     JSON.stringify({
-      input,
-      result,
+      input: input.input,
+      result: input.result,
       previewImageUrl: input.previewImageUrl ?? null,
       imageWarning: input.imageWarning ?? "",
       saved_at: new Date().toISOString()

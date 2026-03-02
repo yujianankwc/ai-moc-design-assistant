@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import {
   buildQuickEntryResult,
   mapReferenceTypeLabel,
@@ -132,7 +132,8 @@ function parseFromSearchParams(searchParams: URLSearchParams): QuickEntryInput |
 
 export default function QuickEntryResultPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
+  const [rawSearch, setRawSearch] = useState("");
+  const searchParams = useMemo(() => new URLSearchParams(rawSearch), [rawSearch]);
   const quickProjectIdFromQuery = searchParams.get("quickProjectId")?.trim() ?? "";
   const [feedback, setFeedback] = useState("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
@@ -155,6 +156,10 @@ export default function QuickEntryResultPage() {
   const autoRequestedKeyRef = useRef("");
   const imageAutoRequestedKeyRef = useRef("");
   const imageRequestSeqRef = useRef(0);
+
+  useEffect(() => {
+    setRawSearch(window.location.search);
+  }, []);
 
   const source = searchParams.get("source");
   const input = useMemo(() => parseFromSearchParams(searchParams), [searchParams]);
@@ -617,7 +622,7 @@ export default function QuickEntryResultPage() {
                   void requestTextResult(effectiveInput, { manual: true });
                 }
               }}
-              disabled={resultState === "generating"}
+              disabled={isLoading}
               className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
               重试生成文字判断

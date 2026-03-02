@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { buildQuickToProfessionalPrefill, readQuickPrefillFromSession, toQuickPrefillFromSearchParams } from "@/lib/quick-entry";
 import type { ProjectFormPayload, ProjectStatus } from "@/types/project";
 
@@ -77,7 +77,6 @@ function inputClass(error?: string) {
 
 export default function ProjectCreatePage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const hasAppliedQuickPrefillRef = useRef(false);
   const [formData, setFormData] = useState<FormData>(initialFormData);
   const [errors, setErrors] = useState<FormErrors>({});
@@ -86,6 +85,7 @@ export default function ProjectCreatePage() {
 
   useEffect(() => {
     if (hasAppliedQuickPrefillRef.current) return;
+    const searchParams = new URLSearchParams(window.location.search);
     const fromQuick = searchParams.get("from") === "quick" || Boolean(searchParams.get("idea"));
     if (!fromQuick) return;
 
@@ -106,7 +106,7 @@ export default function ProjectCreatePage() {
     }));
     setFeedback("已为你带入轻量入口内容，你不用重来，只需补全关键信息。");
     hasAppliedQuickPrefillRef.current = true;
-  }, [searchParams]);
+  }, []);
 
   const handleChange = (field: keyof FormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));
