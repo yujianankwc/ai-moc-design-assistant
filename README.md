@@ -23,3 +23,28 @@ npm run dev
    - `AI_API_KEY`
    - `AI_MODEL`
    - `AI_BASE_URL` (optional, defaults to OpenAI API)
+   - `AI_IMAGE_MODEL` (optional, defaults to `AI_MODEL`, used for quick preview image generation)
+   - `AI_IMAGE_SIZE` (optional, default `2048x2048`; required by some image models)
+   - `SCENIC_5A_CSV_PATH` (optional, path to 5A scenic dataset csv; used to anchor scenic idea generation)
+
+## Scenic knowledge dataset (optional but recommended)
+
+For scenic-spot idea generation quality, provide a CSV file where each attraction line follows:
+
+```text
+景区名 | 地址 | 简介
+```
+
+Recommended location: `data/scenic-5a.csv`, or set `SCENIC_5A_CSV_PATH` in `.env.local`.
+
+Import helper:
+
+```bash
+npm run import:scenic-5a
+```
+
+Or with custom source path:
+
+```bash
+npm run import:scenic-5a -- "/absolute/path/to/your.csv"
+```

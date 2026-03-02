@@ -22,6 +22,7 @@ export type ProjectRow = {
   id: string;
   user_id: string;
   title: string | null;
+  category?: string | null;
   status: ProjectStatus;
   updated_at: string;
 };

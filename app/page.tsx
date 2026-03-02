@@ -12,19 +12,27 @@ export default function LandingPage() {
         <p className="mt-2 max-w-2xl text-xs text-slate-500">
           输入一个想法，系统会帮你完成前期判断、参考整理和下一步推进建议。
         </p>
-        <div className="mt-6 flex gap-3">
-          <Link
-            href="/login"
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
-          >
-            进入内测并提交创意
-          </Link>
-          <Link
-            href="/projects"
-            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            查看项目列表
-          </Link>
+        <div className="mt-6 grid gap-3 md:grid-cols-2">
+          <div className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+            <p className="text-sm font-semibold text-slate-900">轻量入口</p>
+            <p className="mt-1 text-xs text-slate-600">输入一句话，快速看方向与下一步建议</p>
+            <Link
+              href="/quick/new"
+              className="mt-3 inline-flex rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            >
+              快速试创意（1分钟）
+            </Link>
+          </div>
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <p className="text-sm font-semibold text-slate-900">专业入口</p>
+            <p className="mt-1 text-xs text-slate-600">完整填写项目信息，获取可评审/可打样方案</p>
+            <Link
+              href="/projects/new"
+              className="mt-3 inline-flex rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            >
+              专业方案工作台（深度版）
+            </Link>
+          </div>
         </div>
       </div>
 

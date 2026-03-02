@@ -9,6 +9,7 @@ export const metadata: Metadata = {
 
 const navItems = [
   { href: "/", label: "首页" },
+  { href: "/quick/new", label: "轻量入口" },
   { href: "/login", label: "登录" },
   { href: "/projects", label: "项目列表" },
   { href: "/projects/new", label: "创建项目" }

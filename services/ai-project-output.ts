@@ -224,8 +224,12 @@ ${modeInstruction}
       response.status === 400 &&
       (rawBodyText.includes("response_format.type") ||
         rawBodyText.includes("json_object is not supported"));
+    const providerResultError =
+      rawBodyText.includes("result is not defined") ||
+      rawBodyText.includes("ReferenceError") ||
+      rawBodyText.includes("undefined");
 
-    if (unsupportedJsonMode) {
+    if (unsupportedJsonMode || providerResultError) {
       response = await callModel(false);
     } else {
       throw new Error(`AI 调用失败: ${response.status} ${rawBodyText}`);

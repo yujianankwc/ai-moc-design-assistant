@@ -7,7 +7,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "import:scenic-5a": "node scripts/import-scenic-5a.mjs"
   },
   "keywords": [],
   "author": "",

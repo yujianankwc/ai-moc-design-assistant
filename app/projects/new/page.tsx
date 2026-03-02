@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { buildQuickToProfessionalPrefill, readQuickPrefillFromSession, toQuickPrefillFromSearchParams } from "@/lib/quick-entry";
 import type { ProjectFormPayload, ProjectStatus } from "@/types/project";
 
 type FormData = {
@@ -76,10 +77,36 @@ function inputClass(error?: string) {
 
 export default function ProjectCreatePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const hasAppliedQuickPrefillRef = useRef(false);
   const [formData, setFormData] = useState<FormData>(initialFormData);
   const [errors, setErrors] = useState<FormErrors>({});
   const [feedback, setFeedback] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  useEffect(() => {
+    if (hasAppliedQuickPrefillRef.current) return;
+    const fromQuick = searchParams.get("from") === "quick" || Boolean(searchParams.get("idea"));
+    if (!fromQuick) return;
+
+    const prefill =
+      toQuickPrefillFromSearchParams(searchParams) ??
+      readQuickPrefillFromSession();
+    if (!prefill) return;
+
+    const mapped = buildQuickToProfessionalPrefill(prefill);
+    setFormData((prev) => ({
+      ...prev,
+      title: prev.title || mapped.title || "",
+      description: prev.description || mapped.description || "",
+      style: prev.style || mapped.style || "",
+      build_goal: prev.build_goal || mapped.build_goal || "",
+      collaboration_goal: prev.collaboration_goal || mapped.collaboration_goal || "",
+      notes_for_factory: prev.notes_for_factory || mapped.notes_for_factory || ""
+    }));
+    setFeedback("已为你带入轻量入口内容，你不用重来，只需补全关键信息。");
+    hasAppliedQuickPrefillRef.current = true;
+  }, [searchParams]);
 
   const handleChange = (field: keyof FormData, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }));

@@ -31,6 +31,17 @@ function formatStatus(status: string) {
   return mapProjectStatus(status);
 }
 
+function isQuickProject(category: string | null | undefined) {
+  return category === "quick_entry";
+}
+
+function clampTitle(value: string, maxChars = 24) {
+  const compact = value.replace(/\s+/g, " ").trim();
+  const chars = Array.from(compact);
+  if (chars.length <= maxChars) return chars.join("");
+  return `${chars.slice(0, maxChars).join("")}…`;
+}
+
 function formatDate(value: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
@@ -50,9 +61,12 @@ export default async function ProjectsPage() {
     dbProjects.length > 0
       ? dbProjects.map((item) => ({
           id: item.id,
-          name: item.title || "未命名项目",
-          status: formatStatus(item.status),
-          updatedAt: formatDate(item.updated_at)
+          name: clampTitle(item.title || "未命名项目"),
+          projectType: isQuickProject(item.category) ? "轻量" : "专业",
+          status: isQuickProject(item.category) ? "轻量已生成" : formatStatus(item.status),
+          updatedAt: formatDate(item.updated_at),
+          viewHref: isQuickProject(item.category) ? `/quick/result?quickProjectId=${item.id}` : `/projects/${item.id}`,
+          viewLabel: isQuickProject(item.category) ? "查看创意方向结果" : "查看项目方案"
         }))
       : mockProjects;
 
@@ -89,18 +103,33 @@ export default async function ProjectsPage() {
         {projects.map((project) => (
           <article key={project.id} className="rounded-xl border border-slate-200 bg-white p-5">
             <div className="flex items-start justify-between gap-3">
-              <h2 className="text-base font-semibold text-slate-900">{project.name}</h2>
-              <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">
-                {project.status}
-              </span>
+              <h2 className="truncate text-base font-semibold text-slate-900" title={project.name}>
+                {project.name}
+              </h2>
+              <div className="flex items-center gap-2">
+                {"projectType" in project && (
+                  <span
+                    className={`rounded-full px-2 py-1 text-xs ${
+                      project.projectType === "轻量"
+                        ? "bg-blue-50 text-blue-700"
+                        : "bg-emerald-50 text-emerald-700"
+                    }`}
+                  >
+                    {project.projectType}
+                  </span>
+                )}
+                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                  {project.status}
+                </span>
+              </div>
             </div>
             <p className="mt-2 text-xs text-slate-500">最近更新：{project.updatedAt}</p>
             <div className="mt-4">
               <Link
-                href={`/projects/${project.id}`}
+                href={"viewHref" in project ? project.viewHref : `/projects/${project.id}`}
                 className="text-sm font-medium text-blue-600 hover:text-blue-700"
               >
-                查看项目方案
+                {"viewLabel" in project ? project.viewLabel : "查看项目方案"}
               </Link>
             </div>
           </article>

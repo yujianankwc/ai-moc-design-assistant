@@ -1,25 +1,101 @@
-import { DEMO_USER } from "@/lib/demo-user";
+import { cookies, headers } from "next/headers";
 import { buildEditableVersion } from "@/lib/editable-version";
 import { evaluateProductionScoreByRules } from "@/lib/production-score-rules";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
+import { buildScopedDemoUser, normalizeVisitorId, VISITOR_COOKIE_NAME, VISITOR_HEADER_NAME } from "@/lib/visitor-id";
 import { mockProjectResults } from "@/services/mock-project-results";
 import { generateProjectOutputWithAI } from "@/services/ai-project-output";
 import type { GenerationMode } from "@/types/generation-mode";
 import type { ProjectDetailRow, ProjectFormPayload, ProjectRow, ProjectStatus } from "@/types/project";
 import type { ProjectOutputRow } from "@/types/project-output";
+import type { QuickEntryInput, QuickEntryResult } from "@/types/quick-entry";
 import type { CreateServiceRequestInput } from "@/types/service-request";
 
 export const SYSTEM_FALLBACK_MARKER = "__SYSTEM_FALLBACK__:";
 export const RULE_DEDUCTION_MARKER = "__RULE_DEDUCTIONS__:";
+export const QUICK_PROJECT_DATA_MARKER = "__QUICK_PROJECT_DATA__:";
+
+type QuickProjectData = {
+  input: QuickEntryInput;
+  result: QuickEntryResult;
+  textWarning?: string;
+  previewImageUrl?: string | null;
+  imageWarning?: string;
+};
+
+function clampChars(value: string, maxChars: number) {
+  const chars = Array.from(value.trim());
+  if (chars.length <= maxChars) return chars.join("");
+  return `${chars.slice(0, maxChars).join("")}…`;
+}
+
+function stripTitlePrefixes(value: string) {
+  return value
+    .replace(/^(做一个|想做一个|试试做个|做成|来一个|做个|试试做一个|想做个)\s*/g, "")
+    .trim();
+}
+
+function stripProcessWords(value: string) {
+  return value
+    .replace(/(低成本|众筹|打样|验证|方案|路线|试水|可量产|升级专业|方向判断)/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function pickCoreTheme(value: string) {
+  const cleaned = stripProcessWords(stripTitlePrefixes(value));
+  const compact = cleaned.replace(/\s+/g, " ").trim();
+  if (!compact) return "创意主题";
+  const byPunctuation = compact.split(/[，。,.!！?？:：;；、\n]/).map((item) => item.trim()).filter(Boolean);
+  const firstChunk = byPunctuation[0] || compact;
+  return clampChars(firstChunk, 12).replace(/[（）()]/g, "").trim() || "创意主题";
+}
+
+function normalizeQuickProjectTitle(input: {
+  conceptTitle?: string | null;
+  rawIdea?: string | null;
+}) {
+  const concept = (input.conceptTitle ?? "")
+    .replace(/（AI\s*轻量概念）/g, "")
+    .replace(/（轻量概念版）/g, "")
+    .trim();
+  const raw = (input.rawIdea ?? "").trim();
+  const picked = concept || raw || "创意主题";
+  const coreTheme = pickCoreTheme(picked);
+  const normalized = `${coreTheme}（AI 轻量概念）`;
+  return clampChars(normalized, 22);
+}
+
+function encodeQuickProjectData(data: QuickProjectData) {
+  return `${QUICK_PROJECT_DATA_MARKER}${JSON.stringify(data)}`;
+}
+
+function decodeQuickProjectData(raw: string | null | undefined): QuickProjectData | null {
+  if (!raw || !raw.startsWith(QUICK_PROJECT_DATA_MARKER)) return null;
+  try {
+    const json = raw.slice(QUICK_PROJECT_DATA_MARKER.length);
+    const parsed = JSON.parse(json) as QuickProjectData;
+    if (!parsed?.input?.idea || !parsed?.result?.topJudgement) return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
 
 export async function ensureDemoUser() {
   const supabase = getSupabaseServerClient();
+  const headerStore = await headers();
+  const cookieStore = await cookies();
+  const headerVisitorId = normalizeVisitorId(headerStore.get(VISITOR_HEADER_NAME) ?? "");
+  const cookieVisitorId = normalizeVisitorId(cookieStore.get(VISITOR_COOKIE_NAME)?.value ?? "");
+  const visitorId = headerVisitorId || cookieVisitorId || "anonymous";
+  const demoUser = buildScopedDemoUser(visitorId);
 
   const { error } = await supabase.from("users").upsert(
     {
-      id: DEMO_USER.id,
-      email: DEMO_USER.email,
-      name: DEMO_USER.name
+      id: demoUser.id,
+      email: demoUser.email,
+      name: demoUser.name
     },
     { onConflict: "id" }
   );
@@ -28,7 +104,7 @@ export async function ensureDemoUser() {
     throw new Error(`演示用户初始化失败: ${error.message}`);
   }
 
-  return DEMO_USER;
+  return demoUser;
 }
 
 export async function createProjectForDemoUser(input: {
@@ -312,7 +388,7 @@ export async function listProjectsByDemoUser() {
 
   const { data, error } = await supabase
     .from("projects")
-    .select("id,user_id,title,status,updated_at")
+    .select("id,user_id,title,status,updated_at,category")
     .eq("user_id", demoUser.id)
     .order("updated_at", { ascending: false });
 
@@ -321,6 +397,210 @@ export async function listProjectsByDemoUser() {
   }
 
   return (data ?? []) as ProjectRow[];
+}
+
+export async function createQuickProjectForDemoUser(input: {
+  quickInput: QuickEntryInput;
+  quickResult: QuickEntryResult;
+  textWarning?: string;
+}) {
+  const supabase = getSupabaseServerClient();
+  const demoUser = await ensureDemoUser();
+  const title = normalizeQuickProjectTitle({
+    conceptTitle: input.quickResult.conceptTitle,
+    rawIdea: input.quickInput.idea
+  });
+
+  const quickData: QuickProjectData = {
+    input: input.quickInput,
+    result: input.quickResult,
+    textWarning: input.textWarning ?? "",
+    previewImageUrl: null,
+    imageWarning: input.textWarning ?? ""
+  };
+
+  const { data, error } = await supabase
+    .from("projects")
+    .insert({
+      user_id: demoUser.id,
+      title,
+      status: "ready",
+      category: "quick_entry",
+      style: input.quickInput.style || null,
+      size_target:
+        input.quickInput.scale === "small"
+          ? "small"
+          : input.quickInput.scale === "medium"
+            ? "medium"
+            : input.quickInput.scale === "large"
+              ? "large"
+              : input.quickInput.direction === "display"
+                ? "display"
+                : input.quickInput.direction === "cost"
+                  ? "small"
+                  : "medium",
+      description: input.quickInput.idea,
+      notes_for_factory: encodeQuickProjectData(quickData)
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    throw new Error(`轻量项目写入失败: ${error.message}`);
+  }
+
+  return data;
+}
+
+export async function updateQuickProjectResultForDemoUser(input: {
+  projectId: string;
+  quickInput: QuickEntryInput;
+  quickResult: QuickEntryResult;
+  textWarning?: string;
+}) {
+  const supabase = getSupabaseServerClient();
+  const demoUser = await ensureDemoUser();
+  const title = normalizeQuickProjectTitle({
+    conceptTitle: input.quickResult.conceptTitle,
+    rawIdea: input.quickInput.idea
+  });
+
+  const { data, error } = await supabase
+    .from("projects")
+    .select("id,user_id,category,notes_for_factory")
+    .eq("id", input.projectId)
+    .eq("user_id", demoUser.id)
+    .eq("category", "quick_entry")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`轻量项目读取失败: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("未找到轻量项目，无法更新结果。");
+  }
+
+  const previous = decodeQuickProjectData(data.notes_for_factory);
+  const nextData: QuickProjectData = {
+    input: input.quickInput,
+    result: input.quickResult,
+    textWarning: input.textWarning ?? "",
+    previewImageUrl: previous?.previewImageUrl ?? null,
+    imageWarning: previous?.imageWarning ?? ""
+  };
+
+  const { error: updateError } = await supabase
+    .from("projects")
+    .update({
+      title,
+      status: "ready",
+      style: input.quickInput.style || null,
+      size_target:
+        input.quickInput.scale === "small"
+          ? "small"
+          : input.quickInput.scale === "medium"
+            ? "medium"
+            : input.quickInput.scale === "large"
+              ? "large"
+              : input.quickInput.direction === "display"
+                ? "display"
+                : input.quickInput.direction === "cost"
+                  ? "small"
+                  : "medium",
+      description: input.quickInput.idea,
+      notes_for_factory: encodeQuickProjectData(nextData)
+    })
+    .eq("id", input.projectId)
+    .eq("user_id", demoUser.id);
+
+  if (updateError) {
+    throw new Error(`轻量项目结果更新失败: ${updateError.message}`);
+  }
+
+  return { id: input.projectId };
+}
+
+export async function getQuickProjectByIdForDemoUser(projectId: string) {
+  const supabase = getSupabaseServerClient();
+  const demoUser = await ensureDemoUser();
+
+  const { data, error } = await supabase
+    .from("projects")
+    .select("id,user_id,title,status,updated_at,category,notes_for_factory")
+    .eq("id", projectId)
+    .eq("user_id", demoUser.id)
+    .eq("category", "quick_entry")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`轻量项目读取失败: ${error.message}`);
+  }
+  if (!data) return null;
+
+  const quickData = decodeQuickProjectData(data.notes_for_factory);
+  if (!quickData) return null;
+
+  return {
+    id: data.id,
+    title: data.title,
+    status: data.status,
+    updatedAt: data.updated_at,
+    input: quickData.input,
+    result: quickData.result,
+    previewImageUrl: quickData.previewImageUrl ?? null,
+    imageWarning: quickData.imageWarning ?? "",
+    textWarning: quickData.textWarning ?? ""
+  };
+}
+
+export async function updateQuickProjectImageForDemoUser(input: {
+  projectId: string;
+  idea: string;
+  previewImageUrl?: string | null;
+  imageWarning?: string;
+}) {
+  const supabase = getSupabaseServerClient();
+  const demoUser = await ensureDemoUser();
+
+  const { data, error } = await supabase
+    .from("projects")
+    .select("id,user_id,category,notes_for_factory")
+    .eq("id", input.projectId)
+    .eq("user_id", demoUser.id)
+    .eq("category", "quick_entry")
+    .maybeSingle();
+
+  if (error) {
+    throw new Error(`轻量项目更新失败: ${error.message}`);
+  }
+  if (!data) {
+    throw new Error("未找到轻量项目，无法更新预览图。");
+  }
+
+  const quickData = decodeQuickProjectData(data.notes_for_factory);
+  if (!quickData) {
+    throw new Error("轻量项目数据缺失，无法更新预览图。");
+  }
+  if (quickData.input.idea.trim() !== input.idea.trim()) {
+    throw new Error("轻量项目校验失败，无法更新预览图。");
+  }
+
+  const nextData: QuickProjectData = {
+    ...quickData,
+    previewImageUrl:
+      typeof input.previewImageUrl === "string" ? input.previewImageUrl : input.previewImageUrl === null ? null : quickData.previewImageUrl ?? null,
+    imageWarning: input.imageWarning ?? quickData.imageWarning ?? ""
+  };
+
+  const { error: updateError } = await supabase
+    .from("projects")
+    .update({ notes_for_factory: encodeQuickProjectData(nextData) })
+    .eq("id", input.projectId)
+    .eq("user_id", demoUser.id);
+
+  if (updateError) {
+    throw new Error(`轻量项目预览图更新失败: ${updateError.message}`);
+  }
 }
 
 export async function getProjectWithOutputById(projectId: string) {
