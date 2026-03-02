@@ -19,15 +19,15 @@ export default function LoginPage() {
   };
 
   return (
-    <section className="mx-auto max-w-md space-y-6">
+    <section className="mx-auto max-w-md space-y-5 sm:space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold text-slate-900">登录</h1>
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">登录</h1>
         <p className="text-sm text-slate-600">
           当前为内测登录入口，本轮先使用轻量登录方式体验完整项目流程。
         </p>
       </div>
 
-      <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-6">
+      <div className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
         <label className="block space-y-2">
           <span className="text-sm font-medium text-slate-700">邮箱</span>
           <input

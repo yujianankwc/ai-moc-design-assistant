@@ -207,14 +207,14 @@ export default function ProjectCreatePage() {
   return (
     <section className="space-y-6">
       <div>
-        <h1 className="text-2xl font-semibold text-slate-900">提交创意项目</h1>
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">提交创意项目</h1>
         <p className="text-sm text-slate-600">
           用几分钟把你的创意方向、关键约束和推进目标说清楚，我们会先生成一版可讨论的方案草案。
         </p>
       </div>
 
       <form
-        className="space-y-5 rounded-xl border border-slate-200 bg-white p-6"
+        className="space-y-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-6"
         onSubmit={(event) => event.preventDefault()}
       >
         <section className="space-y-4">
@@ -456,7 +456,7 @@ export default function ProjectCreatePage() {
           type="button"
           onClick={handleSaveDraft}
           disabled={isSubmitting}
-          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto"
         >
           保存草稿
         </button>
@@ -464,7 +464,7 @@ export default function ProjectCreatePage() {
           type="button"
           onClick={handleGeneratePlan}
           disabled={isSubmitting}
-          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 sm:w-auto"
         >
           提交并生成方案
         </button>

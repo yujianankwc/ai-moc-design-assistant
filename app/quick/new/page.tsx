@@ -142,13 +142,13 @@ export default function QuickEntryNewPage() {
   };
 
   return (
-    <section className="mx-auto max-w-3xl space-y-6">
+    <section className="mx-auto max-w-3xl space-y-5 sm:space-y-6">
       <div className="space-y-2">
-        <h1 className="text-2xl font-semibold text-slate-900">先试一下你的创意方向</h1>
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">先试一下你的创意方向</h1>
         <p className="text-sm text-slate-600">用最少输入快速得到方向判断，再决定是否进入专业方案流程。</p>
       </div>
 
-      <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-6">
+      <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
         <div className="space-y-2">
           <p className="text-sm font-medium text-slate-700">先选一个方向（建议）</p>
           <div className="flex flex-wrap gap-2">
@@ -277,7 +277,7 @@ export default function QuickEntryNewPage() {
           type="button"
           onClick={handleSubmit}
           disabled={isSubmitting}
-          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+          className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 sm:w-auto"
         >
           {isSubmitting ? "正在生成..." : "立即生成创意方向结果"}
         </button>

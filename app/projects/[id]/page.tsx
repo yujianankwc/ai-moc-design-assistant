@@ -296,8 +296,8 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
   const recommendationReasonText = getRecommendationReasonText(mainRecommendation);
 
   return (
-    <section className="space-y-5">
-      <h1 className="text-2xl font-semibold text-slate-900">项目方案结果</h1>
+    <section className="space-y-4 sm:space-y-5">
+      <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">项目方案结果</h1>
       {!fromRealProject && !mockProjectResultMap[id] && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
           当前项目尚未接入真实方案输出，已为你展示演示方案内容。
@@ -314,7 +314,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         </div>
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">1) 项目头部信息区</h2>
         {realProjectId && (
           <div className="mt-3">
@@ -325,7 +325,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
           </div>
         )}
         <div className="mt-2 grid gap-2 text-sm text-slate-700 md:grid-cols-2">
-          <p>项目 ID：{result.id}</p>
+          <p className="break-all">项目 ID：{result.id}</p>
           <p>项目名称：{result.projectTitle}</p>
           <p>项目状态：{projectStatusLabel ?? "演示结果"}</p>
           <p>作品类型：{mapCategory(result.category)}</p>
@@ -339,12 +339,12 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         <ResultDiffSummary projectId={realProjectId} currentSnapshot={currentDiffSnapshot} />
       )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">本次判断</h2>
         <p className="mt-2 text-sm text-slate-700">{resultJudgement}</p>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">2) AI 设计简报区</h2>
         <p className="mt-2 text-sm text-slate-700">{designBriefSummary}</p>
         <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-700">
@@ -356,7 +356,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         </ul>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">3) 创意画像概览</h2>
         <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
           {creativeProfile.overallSummary}
@@ -379,7 +379,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">4) 相似参考区</h2>
         <p className="mt-2 text-xs text-slate-500">
           以下参考用于启发同类方向与落地思路，不代表唯一标准答案。
@@ -415,7 +415,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">5) 零件规划草案</h2>
         <p className="mt-2 text-sm text-slate-600">
           用于前期评审与打样前规划，不作为最终生产清单。
@@ -431,7 +431,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">6) 风险提示区</h2>
         <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-slate-700">
           {result.risks.map((item) => (
@@ -440,7 +440,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         </ul>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">7) 可生产性建议区</h2>
         <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
           可生产性评分：{result.production_score} / 100
@@ -469,7 +469,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         </ul>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">8) 关键改造建议区</h2>
         <p className="mt-2 text-xs text-slate-500">
           以下建议基于当前文字输入与零件草案，用于前期收敛方向，不等同于真实打样结论。
@@ -494,7 +494,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">9) 人工编辑区</h2>
         <div className="mt-3">
           {realProjectId ? (

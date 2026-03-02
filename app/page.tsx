@@ -3,9 +3,9 @@ import Link from "next/link";
 export default function LandingPage() {
   return (
     <section className="space-y-8">
-      <div className="rounded-xl border border-slate-200 bg-white p-8">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-8">
         <p className="text-sm font-medium text-blue-600">内测体验版</p>
-        <h1 className="mt-2 text-3xl font-semibold text-slate-900">提交创意项目</h1>
+        <h1 className="mt-2 text-2xl font-semibold text-slate-900 sm:text-3xl">提交创意项目</h1>
         <p className="mt-3 max-w-2xl text-slate-600">
           帮助积木创作者把模糊创意更快整理成可评审、可打样、可落地的项目方案。
         </p>
@@ -36,7 +36,7 @@ export default function LandingPage() {
         </div>
       </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white p-6">
+      <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
         <h2 className="text-lg font-semibold text-slate-900">核心流程</h2>
         <ol className="mt-4 grid gap-3 text-sm text-slate-700 md:grid-cols-5">
           <li className="rounded-lg bg-slate-50 p-3">1. 创建项目</li>
@@ -48,7 +48,7 @@ export default function LandingPage() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
           <h3 className="text-base font-semibold text-slate-900">你将体验到</h3>
           <ul className="mt-3 space-y-2 text-sm text-slate-700">
             <li>首页、登录、项目列表、创建项目、项目结果页</li>
@@ -56,7 +56,7 @@ export default function LandingPage() {
             <li>后续再接入真实数据能力</li>
           </ul>
         </div>
-        <div className="rounded-xl border border-slate-200 bg-white p-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
           <h3 className="text-base font-semibold text-slate-900">当前暂不包含</h3>
           <ul className="mt-3 space-y-2 text-sm text-slate-700">
             <li>社区、商城、评论、投票</li>

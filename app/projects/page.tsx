@@ -93,7 +93,7 @@ export default async function ProjectsPage() {
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">项目列表</h1>
+          <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">项目列表</h1>
           <p className="text-sm text-slate-600">优先展示当前演示用户的真实项目数据。</p>
         </div>
         <div className="flex items-center gap-2">
@@ -120,12 +120,12 @@ export default async function ProjectsPage() {
 
       <div className="grid gap-4 md:grid-cols-2">
         {projects.map((project) => (
-          <article key={project.id} className="rounded-xl border border-slate-200 bg-white p-5">
-            <div className="flex items-start justify-between gap-3">
+          <article key={project.id} className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+            <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:gap-3">
               <h2 className="truncate text-base font-semibold text-slate-900" title={project.name}>
                 {project.name}
               </h2>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span
                   className={`rounded-full px-2 py-1 text-xs ${
                     project.projectType === "轻量"

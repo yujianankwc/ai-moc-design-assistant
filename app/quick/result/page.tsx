@@ -342,7 +342,7 @@ export default function QuickEntryResultPage() {
         input: data.input,
         result: data.result,
         previewImageUrl: null,
-        imageWarning: data.textWarning ?? ""
+        imageWarning: ""
       });
     } catch (error) {
       const rawMessage = error instanceof Error ? error.message : "文字判断生成失败，请稍后重试。";
@@ -387,14 +387,14 @@ export default function QuickEntryResultPage() {
       setImageMessage("");
       return;
     }
-    if (imageWarning) {
+    if (imageWarning && hasTriedImageGeneration) {
       setImageState("failed");
       setImageMessage(imageWarning);
     } else {
       setImageState("idle");
       setImageMessage("");
     }
-  }, [imageWarning, previewImageUrl]);
+  }, [hasTriedImageGeneration, imageWarning, previewImageUrl]);
 
   useEffect(() => {
     if (imageState !== "generating") {
@@ -550,7 +550,7 @@ export default function QuickEntryResultPage() {
     .trim()
     .replace(/^[，。；\s]+/, "");
   const showPreparingImageHint =
-    source === "ai" && Boolean(effectiveInput?.idea) && !imageUrl && (imageState === "generating" || !hasTriedImageGeneration);
+    source === "ai" && Boolean(effectiveInput?.idea) && !imageUrl && imageState !== "failed";
 
   const handleUpgrade = () => {
     if (!resolvedResult) return;
@@ -592,8 +592,8 @@ export default function QuickEntryResultPage() {
   };
 
   return (
-    <section className="mx-auto max-w-4xl space-y-5">
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+    <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h1 className="text-lg font-semibold text-slate-900">我先帮你看了下这个创意</h1>
         {isLoading ? (
           <>
@@ -639,7 +639,7 @@ export default function QuickEntryResultPage() {
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">AI 创意预览</h2>
         {isLoading ? (
           <div className="mt-3 h-56 animate-pulse rounded-lg bg-slate-100" />
@@ -749,7 +749,7 @@ export default function QuickEntryResultPage() {
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
           <h2 className="text-base font-semibold text-slate-900">想看看类似方向怎么做？</h2>
           <button
@@ -788,7 +788,7 @@ export default function QuickEntryResultPage() {
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">更适合做什么</h2>
         {isLoading ? (
           <div className="mt-2 space-y-2">
