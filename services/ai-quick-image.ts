@@ -11,20 +11,57 @@ type GenerateQuickPreviewImageInput = {
   imageMode: QuickImageMode;
   referenceImage?: string;
   regenerateToken?: string;
+  imageModelAlias?: "default" | "nano_banner" | "nano_banana";
 };
 
 function toDataUrl(base64: string) {
   return `data:image/png;base64,${base64}`;
 }
 
+function pickImageConfig(alias: "default" | "nano_banner" | "nano_banana") {
+  const defaultConfig = {
+    apiKey: process.env.AI_IMAGE_API_KEY || process.env.AI_API_KEY || "",
+    baseUrl: process.env.AI_IMAGE_BASE_URL || process.env.AI_BASE_URL || "https://api.openai.com/v1",
+    model: process.env.AI_IMAGE_MODEL || process.env.AI_MODEL || "",
+    endpoint: process.env.AI_IMAGE_ENDPOINT || ""
+  };
+
+  if (alias === "nano_banana" || alias === "nano_banner") {
+    return {
+      apiKey:
+        process.env.AI_IMAGE_API_KEY_NANO_BANANA ||
+        process.env.AI_IMAGE_API_KEY_NANO_BANNER ||
+        defaultConfig.apiKey,
+      baseUrl:
+        process.env.AI_IMAGE_BASE_URL_NANO_BANANA ||
+        process.env.AI_IMAGE_BASE_URL_NANO_BANNER ||
+        defaultConfig.baseUrl,
+      model:
+        process.env.AI_IMAGE_MODEL_NANO_BANANA ||
+        process.env.AI_IMAGE_MODEL_NANO_BANNER ||
+        defaultConfig.model,
+      endpoint:
+        process.env.AI_IMAGE_ENDPOINT_NANO_BANANA ||
+        process.env.AI_IMAGE_ENDPOINT_NANO_BANNER ||
+        defaultConfig.endpoint
+    };
+  }
+
+  return defaultConfig;
+}
+
 export async function generateQuickPreviewImage(input: GenerateQuickPreviewImageInput) {
-  const apiKey = process.env.AI_API_KEY;
-  const baseUrl = process.env.AI_BASE_URL || "https://api.openai.com/v1";
-  const imageModel = process.env.AI_IMAGE_MODEL || process.env.AI_MODEL;
+  const defaultAlias =
+    process.env.AI_IMAGE_DEFAULT_ALIAS === "nano_banner" || process.env.AI_IMAGE_DEFAULT_ALIAS === "nano_banana"
+      ? process.env.AI_IMAGE_DEFAULT_ALIAS
+      : "default";
+  const resolvedAlias = input.imageModelAlias || defaultAlias;
+  const { apiKey, baseUrl, model: imageModel, endpoint } = pickImageConfig(resolvedAlias);
   const imageSize = process.env.AI_IMAGE_SIZE || "2048x2048";
+  const requestUrl = endpoint || `${baseUrl}/images/generations`;
 
   if (!apiKey || !imageModel) {
-    throw new Error("缺少图像生成配置，请检查 AI_API_KEY 与 AI_IMAGE_MODEL/AI_MODEL。");
+    throw new Error("缺少图像生成配置，请检查对应模型别名的 AI_IMAGE_* 配置。");
   }
 
   const controller = new AbortController();
@@ -34,7 +71,7 @@ export async function generateQuickPreviewImage(input: GenerateQuickPreviewImage
     const prompt = `${buildImagePromptFromSummary(input)}${
       input.regenerateToken ? `\n构图变化标识：${input.regenerateToken}` : ""
     }`;
-    const response = await fetch(`${baseUrl}/images/generations`, {
+    const response = await fetch(requestUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -58,10 +95,12 @@ export async function generateQuickPreviewImage(input: GenerateQuickPreviewImage
     }
 
     const parsed = JSON.parse(rawText) as {
-      data?: Array<{ url?: string; b64_json?: string }>;
+      data?: Array<{ url?: string; image_url?: string; b64_json?: string }>;
     };
     const first = parsed.data?.[0];
-    const url = typeof first?.url === "string" ? first.url.trim() : "";
+    const urlFromOpenAI = typeof first?.url === "string" ? first.url.trim() : "";
+    const urlFromAceData = typeof first?.image_url === "string" ? first.image_url.trim() : "";
+    const url = urlFromOpenAI || urlFromAceData;
     const b64 = typeof first?.b64_json === "string" ? first.b64_json.trim() : "";
 
     if (url) return url;

@@ -21,9 +21,21 @@ npm run dev
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
    - `AI_API_KEY`
+   - `AI_IMAGE_API_KEY` (optional, defaults to `AI_API_KEY`; use dedicated image provider key if needed)
    - `AI_MODEL`
    - `AI_BASE_URL` (optional, defaults to OpenAI API)
+   - `AI_IMAGE_BASE_URL` (optional, defaults to `AI_BASE_URL`; use this when image provider endpoint differs)
+   - `AI_IMAGE_ENDPOINT` (optional; full image generation endpoint, e.g. when provider is not `/images/generations`)
    - `AI_IMAGE_MODEL` (optional, defaults to `AI_MODEL`, used for quick preview image generation)
+   - `AI_IMAGE_API_KEY_NANO_BANNER` (optional; dedicated key for nano-banner provider)
+   - `AI_IMAGE_BASE_URL_NANO_BANNER` (optional; dedicated base URL for nano-banner provider)
+   - `AI_IMAGE_ENDPOINT_NANO_BANNER` (optional; full endpoint override for nano-banner provider)
+   - `AI_IMAGE_MODEL_NANO_BANNER` (optional; legacy nano alias model ID for quick switching)
+   - `AI_IMAGE_API_KEY_NANO_BANANA` (optional; dedicated key for nano-banana provider)
+   - `AI_IMAGE_BASE_URL_NANO_BANANA` (optional; dedicated base URL for nano-banana provider)
+   - `AI_IMAGE_ENDPOINT_NANO_BANANA` (optional; full endpoint override for nano-banana provider)
+   - `AI_IMAGE_MODEL_NANO_BANANA` (optional; nano-banana model ID for quick switching)
+   - `AI_IMAGE_DEFAULT_ALIAS` (optional, `default` / `nano_banner` / `nano_banana`; controls default image model selection)
    - `AI_IMAGE_SIZE` (optional, default `2048x2048`; required by some image models)
    - `SCENIC_5A_CSV_PATH` (optional, path to 5A scenic dataset csv; used to anchor scenic idea generation)
 

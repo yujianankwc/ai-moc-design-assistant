@@ -8,19 +8,12 @@ import {
   mapReferenceTypeLabel,
   pickQuickSimilarReferences,
   readQuickAIResultFromSession,
-  resolveQuickScalePreference,
   saveQuickAIResultToSession,
   saveQuickPrefillToSession,
   updateQuickAIImageInSession
 } from "@/lib/quick-entry";
 import { SESSION_COOKIE_NAME, SESSION_COOKIE_VALUE } from "@/lib/session";
 import type { QuickDirection, QuickEntryInput, QuickPath, QuickScalePreference, QuickStyle } from "@/types/quick-entry";
-
-function pathLabel(path: QuickPath) {
-  if (path === "small_batch") return "小批量单品验证";
-  if (path === "creator_plan") return "原创计划 / 众筹验证";
-  return "升级专业方案（深度版）";
-}
 
 function pathButtonClass(target: QuickPath, current: QuickPath) {
   if (target === current) {
@@ -30,12 +23,6 @@ function pathButtonClass(target: QuickPath, current: QuickPath) {
     return "rounded-md bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800";
   }
   return "rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50";
-}
-
-function scaleLabel(scale: "small" | "medium" | "large") {
-  if (scale === "small") return "小型（约80-200颗）";
-  if (scale === "medium") return "中型（约200-600颗）";
-  return "大型（约600-1200颗）";
 }
 
 function clampText(value: string | undefined, maxChars: number) {
@@ -49,16 +36,6 @@ function clampText(value: string | undefined, maxChars: number) {
 function firstSentenceOf(text: string) {
   const hit = text.trim().match(/^[^。！？!?]+[。！？!?]?/);
   return (hit?.[0] || text).trim();
-}
-
-function getImageWaitingText(elapsedSeconds: number) {
-  if (elapsedSeconds >= 20) {
-    return "当前生成稍慢，已自动继续处理中；你可以先看下方文字判断。";
-  }
-  if (elapsedSeconds >= 8) {
-    return "正在完善细节和色彩层次，通常还需要几秒。";
-  }
-  return "正在生成预览图，先帮你把主体构图搭好。";
 }
 
 type QuickCorrectionOption = {
@@ -150,8 +127,6 @@ export default function QuickEntryResultPage() {
   const [imageState, setImageState] = useState<"idle" | "generating" | "failed">("idle");
   const [imageMessage, setImageMessage] = useState("");
   const [resultState, setResultState] = useState<"idle" | "generating" | "failed">("idle");
-  const [resultMessage, setResultMessage] = useState("");
-  const [refreshHint, setRefreshHint] = useState("");
   const [quickProjectId, setQuickProjectId] = useState(quickProjectIdFromQuery);
   const [dbInput, setDbInput] = useState<QuickEntryInput | null>(null);
   const [dbResult, setDbResult] = useState<ReturnType<typeof buildQuickEntryResult> | null>(null);
@@ -160,7 +135,6 @@ export default function QuickEntryResultPage() {
   const [dbMessage, setDbMessage] = useState("");
   const [activeCorrection, setActiveCorrection] = useState("");
   const [showReferences, setShowReferences] = useState(false);
-  const [showFullPreview, setShowFullPreview] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [imageProgress, setImageProgress] = useState(8);
   const [imageElapsedSeconds, setImageElapsedSeconds] = useState(0);
@@ -220,7 +194,6 @@ export default function QuickEntryResultPage() {
   useEffect(() => {
     if (result) {
       setResolvedResult(result);
-      setShowFullPreview(false);
     }
   }, [result]);
 
@@ -308,8 +281,6 @@ export default function QuickEntryResultPage() {
 
   const requestTextResult = useCallback(async (targetInput: QuickEntryInput, opts?: { manual?: boolean }) => {
     setResultState("generating");
-    setResultMessage("文字判断生成中，请稍候...");
-    if (opts?.manual) setRefreshHint("");
 
     try {
       const response = await fetch("/api/quick/generate", {
@@ -343,10 +314,6 @@ export default function QuickEntryResultPage() {
 
       setResolvedResult(data.result);
       setResultState("idle");
-      setResultMessage(data.textWarning ?? "");
-      if (opts?.manual && !data.textWarning) {
-        setRefreshHint("文字判断已更新。");
-      }
       if (data.quickProjectId) {
         setQuickProjectId(data.quickProjectId);
       }
@@ -357,14 +324,7 @@ export default function QuickEntryResultPage() {
         imageWarning: ""
       });
     } catch (error) {
-      const rawMessage = error instanceof Error ? error.message : "文字判断生成失败，请稍后重试。";
-      const normalized = rawMessage.toLowerCase();
-      const message =
-        normalized.includes("result is not defined") || normalized.includes("referenceerror")
-          ? "当前结果用于前期方向判断，后续可继续细化。"
-          : rawMessage;
       setResultState("failed");
-      setResultMessage(message);
       if (!resolvedResult && fallbackResult) {
         setResolvedResult(fallbackResult);
       }
@@ -447,7 +407,7 @@ export default function QuickEntryResultPage() {
           })
         });
         const data = (await response.json().catch(() => null)) as
-          | { previewImageUrl?: string | null; error?: string }
+          | { previewImageUrl?: string | null; usedFallbackToDefault?: boolean; error?: string }
           | null;
         if (!response.ok || !data?.previewImageUrl) {
           throw new Error(data?.error ?? "预览图生成失败，请稍后重试。");
@@ -456,7 +416,7 @@ export default function QuickEntryResultPage() {
         setImageUrl(data.previewImageUrl);
         setImageState("idle");
         setImageProgress(100);
-        setImageMessage("");
+        setImageMessage(data.usedFallbackToDefault ? "当前通道繁忙，已自动切换备用模型。" : "");
         if (quickProjectId) {
           void fetch(`/api/quick/projects/${quickProjectId}`, {
             method: "PATCH",
@@ -560,11 +520,7 @@ export default function QuickEntryResultPage() {
   }
 
   const isLoading = source === "ai" && !resolvedResult;
-  const resolvedScale = effectiveInput ? resolveQuickScalePreference(effectiveInput) : null;
-  const scaleSource = effectiveInput?.scale ? "用户指定" : "系统判断";
   const conceptPreviewText = resolvedResult?.conceptPreview || "";
-  const shortConceptPreview = clampText(conceptPreviewText, 72);
-  const isLongConceptPreview = Array.from(conceptPreviewText).length > 72;
   const previewLead = firstSentenceOf(conceptPreviewText || "这版更像一个可先试水的小体量作品。");
   const previewTail = conceptPreviewText
     .replace(previewLead, "")
@@ -606,7 +562,6 @@ export default function QuickEntryResultPage() {
     setImageUrl(null);
     setImageMessage("");
     setHasTriedImageGeneration(false);
-    setRefreshHint("");
     void requestTextResult(correctedInput, { manual: true });
     void requestImageResult(correctedInput, { manual: true });
   };
@@ -617,24 +572,17 @@ export default function QuickEntryResultPage() {
         <h1 className="text-lg font-semibold text-slate-900">我先帮你看了下这个创意</h1>
         {isLoading ? (
           <>
-            <p className="mt-2 text-sm text-slate-700">正在把你的想法梳理成更直观的作品说明...</p>
-            <p className="mt-1 text-xs text-slate-500">会先给你一句方向建议，再补充预览图和参考内容。</p>
+            <p className="mt-2 text-sm text-slate-700">正在帮你整理这个创意。</p>
+            <p className="mt-1 text-xs text-slate-500">先给你方向，再把画面补出来。</p>
           </>
         ) : (
-          <div className="mt-2 space-y-1 text-sm text-slate-700">
-            <p>{clampText(resolvedResult?.topJudgement, 36)}</p>
-            <p>先从「{resolvedResult?.recommendedFit}」这个方向推进，会更稳一点。</p>
-            <p className="text-xs text-slate-500">先看方向，再做细化。</p>
+          <div className="mt-2 space-y-2">
+            <p className="text-sm text-slate-700">{clampText(resolvedResult?.topJudgement, 42)}</p>
+            <p className="text-xs text-slate-500">先看图，再选下一步。</p>
           </div>
         )}
-        {!isLoading && resultState === "generating" && (
-          <p className="mt-2 text-xs text-blue-700">文字判断生成中，请稍候...</p>
-        )}
-        {!isLoading && resultState === "failed" && resultMessage && (
-          <div className="mt-2 space-y-2">
-            <p className="text-xs text-amber-700">
-              提示：当前结果用于前期方向判断，后续可继续细化。
-            </p>
+        {!isLoading && (
+          <div className="mt-3">
             <button
               type="button"
               onClick={() => {
@@ -642,20 +590,12 @@ export default function QuickEntryResultPage() {
                   void requestTextResult(effectiveInput, { manual: true });
                 }
               }}
-              disabled={isLoading}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+              disabled={resultState === "generating"}
+              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
             >
-              重试生成文字判断
+              重新生成判断
             </button>
           </div>
-        )}
-        {!isLoading && resultState === "idle" && refreshHint && (
-          <p className="mt-2 text-xs text-emerald-700">{refreshHint}</p>
-        )}
-        {!isLoading && resolvedScale && (
-          <p className="mt-2 text-xs text-slate-500">
-            当前规模档位：{scaleLabel(resolvedScale)}（{scaleSource}）
-          </p>
         )}
       </section>
 
@@ -671,6 +611,7 @@ export default function QuickEntryResultPage() {
               onClick={() => setLightboxOpen(true)}
             />
             <p className="mt-1 text-center text-xs text-slate-400">点击图片可查看大图，长按可保存</p>
+            {imageMessage && <p className="mt-1 text-center text-xs text-amber-600">{imageMessage}</p>}
             {lightboxOpen && (
               <div
                 className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
@@ -691,7 +632,13 @@ export default function QuickEntryResultPage() {
               <p>预览图生成时间较长，你可以先看下方文字判断，稍后再回来查看。</p>
             ) : (
               <>
-                <p>{getImageWaitingText(imageElapsedSeconds)}</p>
+                <div className="mb-2 flex items-center gap-1">
+                  <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.2s]" />
+                  <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.1s]" />
+                  <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500" />
+                </div>
+                <p>正在帮你整理这个创意</p>
+                <p className="mt-1 text-xs text-blue-700">先给你方向，再把画面补出来。</p>
                 <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
                   <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
                 </div>
@@ -700,9 +647,7 @@ export default function QuickEntryResultPage() {
             )}
           </div>
         )}
-        <p className="mt-3 text-xs text-slate-500">
-          仅用于方向判断，不代表最终打样结果。
-        </p>
+        <p className="mt-3 text-xs text-slate-500">用于方向判断。</p>
         {isLoading ? (
           <div className="mt-3 space-y-2">
             <div className="h-4 w-2/5 animate-pulse rounded bg-slate-100" />
@@ -711,34 +656,12 @@ export default function QuickEntryResultPage() {
           </div>
         ) : (
           <>
-            <p className="mt-3 text-sm font-medium text-slate-900">{resolvedResult?.conceptTitle}</p>
-            <div className="mt-2 space-y-2">
-              <div>
-                <p className="text-xs font-medium text-slate-500">这版更像什么</p>
-                <p className="text-sm text-slate-700">{showFullPreview ? previewLead : clampText(previewLead, 44)}</p>
-              </div>
-              <div>
-                <p className="text-xs font-medium text-slate-500">为什么会打动人</p>
-                <p className="text-sm text-slate-700">
-                  {showFullPreview
-                    ? previewTail || "这版的识别点和陈列感都比较直接，适合先拿来做小范围反馈测试。"
-                    : clampText(
-                        previewTail || "这版的识别点和陈列感都比较直接，适合先拿来做小范围反馈测试。",
-                        48
-                      )}
-                </p>
-              </div>
+            <div className="mt-3 space-y-1">
+              <p className="text-xs font-medium text-slate-500">这版更像什么</p>
+              <p className="text-sm text-slate-700">{clampText(previewLead, 44)}</p>
+              {previewTail && <p className="text-xs text-slate-500">{clampText(previewTail, 22)}</p>}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              {isLongConceptPreview && (
-                <button
-                  type="button"
-                  onClick={() => setShowFullPreview((prev) => !prev)}
-                  className="text-xs text-blue-600 hover:text-blue-700"
-                >
-                  {showFullPreview ? "收起说明" : "展开说明"}
-                </button>
-              )}
               {imageShowRetryInline && (
                 <button
                   type="button"
@@ -757,8 +680,7 @@ export default function QuickEntryResultPage() {
         )}
         {!isLoading && correctionOptions.length > 0 && (
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
-            <p className="text-sm text-slate-800">这版不太像你想要的？可以快速调整一下</p>
-            <p className="mt-1 text-xs text-slate-500">选一个更接近你脑海画面的方向，我会基于当前创意直接重生一版。</p>
+            <p className="text-sm text-slate-800">换个方向再试试</p>
             <div className="mt-3 flex flex-wrap gap-2">
               {correctionOptions.map((option) => {
                 const isActive = activeCorrection === option.label;
@@ -779,16 +701,13 @@ export default function QuickEntryResultPage() {
                 );
               })}
             </div>
-            <p className="mt-3 text-xs text-slate-500">
-              如果你有更接近的参考图，也可以上传一张，帮助结果更贴近你的想法。
-            </p>
           </div>
         )}
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-slate-900">想看看类似方向怎么做？</h2>
+          <h2 className="text-base font-semibold text-slate-900">相似参考</h2>
           <button
             type="button"
             onClick={() => setShowReferences((prev) => !prev)}
@@ -797,9 +716,7 @@ export default function QuickEntryResultPage() {
             {showReferences ? "先收起" : "展开参考"}
           </button>
         </div>
-        {!showReferences ? (
-          <p className="mt-2 text-xs text-slate-500">这块先帮你收起来了，需要找灵感时再展开就好。</p>
-        ) : isLoading ? (
+        {showReferences && (isLoading ? (
           <div className="mt-3 space-y-3">
             {Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className="rounded-md border border-slate-200 bg-slate-50 p-3">
@@ -822,23 +739,7 @@ export default function QuickEntryResultPage() {
               </div>
             ))}
           </div>
-        )}
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">更适合做什么</h2>
-        {isLoading ? (
-          <div className="mt-2 space-y-2">
-            <div className="h-4 w-1/2 animate-pulse rounded bg-slate-100" />
-            <div className="h-3 w-3/4 animate-pulse rounded bg-slate-100" />
-          </div>
-        ) : (
-          <>
-            <p className="mt-2 text-sm text-slate-700">
-              {resolvedResult?.recommendedReason || "这版更适合先做小体量验证，先看真实用户反馈再决定放大规模。"}
-            </p>
-          </>
-        )}
+        ))}
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
@@ -861,7 +762,7 @@ export default function QuickEntryResultPage() {
                 className={pathButtonClass("small_batch", resolvedResult?.suggestedPath ?? "professional_upgrade")}
               >
                 试做成小批量产品
-                <span className="mt-1 block text-xs text-slate-500">先验证成本和礼品感。</span>
+                <span className="mt-1 block text-xs text-slate-500">先做小样</span>
               </button>
               <button
                 type="button"
@@ -869,7 +770,7 @@ export default function QuickEntryResultPage() {
                 className={pathButtonClass("creator_plan", resolvedResult?.suggestedPath ?? "professional_upgrade")}
               >
                 提交到原创计划 / 众筹
-                <span className="mt-1 block text-xs text-slate-500">先看看用户会不会买单。</span>
+                <span className="mt-1 block text-xs text-slate-500">先测反馈</span>
               </button>
               <button
                 type="button"
@@ -877,12 +778,9 @@ export default function QuickEntryResultPage() {
                 className={pathButtonClass("professional_upgrade", resolvedResult?.suggestedPath ?? "professional_upgrade")}
               >
                 升级为专业方案
-                <span className="mt-1 block text-xs text-slate-200">把结构和规模继续做完整。</span>
+                <span className="mt-1 block text-xs text-slate-200">做深做细</span>
               </button>
             </div>
-            <p className="mt-3 text-xs text-slate-500">
-              系统当前推荐通路：{pathLabel(resolvedResult?.suggestedPath ?? "professional_upgrade")}
-            </p>
           </>
         )}
         {feedback && <p className="mt-2 text-xs text-emerald-700">{feedback}</p>}
