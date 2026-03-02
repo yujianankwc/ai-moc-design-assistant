@@ -76,6 +76,11 @@ function shouldFallbackToDefault(rawError: string, alias: QuickImageAlias) {
   );
 }
 
+function hasReferenceImage(input: QuickEntryInput) {
+  const value = input.referenceImage?.trim() || "";
+  return value.startsWith("http://") || value.startsWith("https://");
+}
+
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as QuickGenerateImageBody;
@@ -88,6 +93,7 @@ export async function POST(request: Request) {
     const knowledge = buildQuickKnowledgePack(summary);
     const imageMode = decideQuickImageMode(summary);
     const requestedAlias = resolveAliasFromBody(body);
+    const usedReferenceImage = hasReferenceImage(input);
     let previewImageUrl = "";
     let usedFallbackToDefault = false;
     try {
@@ -118,7 +124,8 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       previewImageUrl,
-      usedFallbackToDefault
+      usedFallbackToDefault,
+      usedReferenceImage
     });
   } catch (error) {
     return NextResponse.json(

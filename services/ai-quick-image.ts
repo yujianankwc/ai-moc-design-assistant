@@ -18,6 +18,16 @@ function toDataUrl(base64: string) {
   return `data:image/png;base64,${base64}`;
 }
 
+function isHttpUrl(value?: string) {
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
 function pickImageConfig(alias: "default" | "nano_banner" | "nano_banana") {
   const defaultConfig = {
     apiKey: process.env.AI_IMAGE_API_KEY || process.env.AI_API_KEY || "",
@@ -71,21 +81,25 @@ export async function generateQuickPreviewImage(input: GenerateQuickPreviewImage
     const prompt = `${buildImagePromptFromSummary(input)}${
       input.regenerateToken ? `\n构图变化标识：${input.regenerateToken}` : ""
     }`;
+    const bodyPayload: Record<string, unknown> = {
+      model: imageModel,
+      prompt,
+      size: imageSize,
+      response_format: "url",
+      sequential_image_generation: "disabled",
+      stream: false,
+      watermark: true
+    };
+    if (isHttpUrl(input.referenceImage)) {
+      bodyPayload.reference_image_url = input.referenceImage;
+    }
     const response = await fetch(requestUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${apiKey}`
       },
-      body: JSON.stringify({
-        model: imageModel,
-        prompt,
-        size: imageSize,
-        response_format: "url",
-        sequential_image_generation: "disabled",
-        stream: false,
-        watermark: true
-      }),
+      body: JSON.stringify(bodyPayload),
       signal: controller.signal
     });
 

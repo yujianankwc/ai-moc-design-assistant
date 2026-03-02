@@ -126,6 +126,7 @@ export default function QuickEntryResultPage() {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageState, setImageState] = useState<"idle" | "generating" | "failed">("idle");
   const [imageMessage, setImageMessage] = useState("");
+  const [imageInfoHint, setImageInfoHint] = useState("");
   const [resultState, setResultState] = useState<"idle" | "generating" | "failed">("idle");
   const [quickProjectId, setQuickProjectId] = useState(quickProjectIdFromQuery);
   const [dbInput, setDbInput] = useState<QuickEntryInput | null>(null);
@@ -232,12 +233,15 @@ export default function QuickEntryResultPage() {
         if (data.quickProject.previewImageUrl) {
           setImageState("idle");
           setImageMessage("");
+          setImageInfoHint("");
         } else if (data.quickProject.imageWarning) {
           setImageState("failed");
           setImageMessage(data.quickProject.imageWarning);
+          setImageInfoHint("");
         } else {
           setImageState("idle");
           setImageMessage("");
+          setImageInfoHint("");
         }
         setDbLoading(false);
       })
@@ -357,16 +361,17 @@ export default function QuickEntryResultPage() {
     setImageUrl(previewImageUrl);
     setImageState("idle");
     setImageMessage("");
+    setImageInfoHint("");
   }, [previewImageUrl]);
 
   useEffect(() => {
-    if (imageState !== "generating") {
+    if (!hasTriedImageGeneration || imageUrl) {
       setImageProgress((prev) => (prev >= 100 ? 100 : 8));
       setImageElapsedSeconds(0);
       return;
     }
     const timer = window.setInterval(() => {
-      setImageProgress((prev) => Math.min(prev + (prev < 60 ? 8 : 3), 92));
+      setImageProgress((prev) => Math.min(prev + (prev < 60 ? 8 : 3), 95));
     }, 900);
     const elapsedTimer = window.setInterval(() => {
       setImageElapsedSeconds((prev) => prev + 1);
@@ -375,7 +380,7 @@ export default function QuickEntryResultPage() {
       window.clearInterval(timer);
       window.clearInterval(elapsedTimer);
     };
-  }, [imageState]);
+  }, [hasTriedImageGeneration, imageUrl]);
 
   const imageStateRef = useRef(imageState);
   imageStateRef.current = imageState;
@@ -388,6 +393,7 @@ export default function QuickEntryResultPage() {
       setHasTriedImageGeneration(true);
       setImageState("generating");
       setImageMessage("预览图生成中，请稍候...");
+      setImageInfoHint("");
       setImageProgress(8);
       setImageElapsedSeconds(0);
       try {
@@ -407,7 +413,12 @@ export default function QuickEntryResultPage() {
           })
         });
         const data = (await response.json().catch(() => null)) as
-          | { previewImageUrl?: string | null; usedFallbackToDefault?: boolean; error?: string }
+          | {
+              previewImageUrl?: string | null;
+              usedFallbackToDefault?: boolean;
+              usedReferenceImage?: boolean;
+              error?: string;
+            }
           | null;
         if (!response.ok || !data?.previewImageUrl) {
           throw new Error(data?.error ?? "预览图生成失败，请稍后重试。");
@@ -416,7 +427,14 @@ export default function QuickEntryResultPage() {
         setImageUrl(data.previewImageUrl);
         setImageState("idle");
         setImageProgress(100);
-        setImageMessage(data.usedFallbackToDefault ? "当前通道繁忙，已自动切换备用模型。" : "");
+        const messageParts: string[] = [];
+        if (data.usedReferenceImage) {
+          messageParts.push("已使用参考图引导生成。");
+        }
+        if (data.usedFallbackToDefault) {
+          messageParts.push("当前通道繁忙，已自动切换备用模型。");
+        }
+        setImageInfoHint(messageParts.join(" "));
         if (quickProjectId) {
           void fetch(`/api/quick/projects/${quickProjectId}`, {
             method: "PATCH",
@@ -438,6 +456,7 @@ export default function QuickEntryResultPage() {
       } catch (error) {
         if (requestSeq !== imageRequestSeqRef.current) return;
         const message = error instanceof Error ? error.message : "预览图生成失败，请稍后重试。";
+        setImageInfoHint("");
         if (!opts?.isRetry) {
           setImageState("generating");
           setImageMessage("首次生成较慢，正在自动重试...");
@@ -526,7 +545,15 @@ export default function QuickEntryResultPage() {
     .replace(previewLead, "")
     .trim()
     .replace(/^[，。；\s]+/, "");
-  const imageShowRetryInline = imageState === "failed" && hasTriedImageGeneration;
+  const imageShowRetryInline =
+    hasTriedImageGeneration &&
+    !imageUrl &&
+    ((imageState === "failed" && imageElapsedSeconds >= 30) || imageElapsedSeconds >= 90);
+  const imageWaitCountdown = Math.max(0, 30 - imageElapsedSeconds);
+  const displayTopJudgement = clampText(
+    resolvedResult?.topJudgement || fallbackResult?.topJudgement || "正在生成中，请稍候...",
+    42
+  );
 
   const handleUpgrade = () => {
     if (!resolvedResult) return;
@@ -561,6 +588,7 @@ export default function QuickEntryResultPage() {
     setOverrideInput(correctedInput);
     setImageUrl(null);
     setImageMessage("");
+    setImageInfoHint("");
     setHasTriedImageGeneration(false);
     void requestTextResult(correctedInput, { manual: true });
     void requestImageResult(correctedInput, { manual: true });
@@ -570,33 +598,10 @@ export default function QuickEntryResultPage() {
     <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h1 className="text-lg font-semibold text-slate-900">我先帮你看了下这个创意</h1>
-        {isLoading ? (
-          <>
-            <p className="mt-2 text-sm text-slate-700">正在帮你整理这个创意。</p>
-            <p className="mt-1 text-xs text-slate-500">先给你方向，再把画面补出来。</p>
-          </>
-        ) : (
-          <div className="mt-2 space-y-2">
-            <p className="text-sm text-slate-700">{clampText(resolvedResult?.topJudgement, 42)}</p>
-            <p className="text-xs text-slate-500">先看图，再选下一步。</p>
-          </div>
-        )}
-        {!isLoading && (
-          <div className="mt-3">
-            <button
-              type="button"
-              onClick={() => {
-                if (effectiveInput) {
-                  void requestTextResult(effectiveInput, { manual: true });
-                }
-              }}
-              disabled={resultState === "generating"}
-              className="rounded-md border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-            >
-              重新生成判断
-            </button>
-          </div>
-        )}
+        <div className="mt-2 space-y-2">
+          <p className="text-sm text-slate-700">{displayTopJudgement}</p>
+          <p className="text-xs text-slate-500">先看图，再选下一步。</p>
+        </div>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
@@ -611,39 +616,67 @@ export default function QuickEntryResultPage() {
               onClick={() => setLightboxOpen(true)}
             />
             <p className="mt-1 text-center text-xs text-slate-400">点击图片可查看大图，长按可保存</p>
-            {imageMessage && <p className="mt-1 text-center text-xs text-amber-600">{imageMessage}</p>}
+            {imageInfoHint && <p className="mt-1 text-center text-xs text-amber-600">{imageInfoHint}</p>}
             {lightboxOpen && (
               <div
-                className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+                className="fixed inset-0 z-50 overflow-auto bg-black/85 p-4"
                 onClick={() => setLightboxOpen(false)}
               >
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={imageUrl}
-                  alt="大图预览"
-                  className="max-h-[90vh] max-w-full rounded-lg object-contain"
-                />
+                <div className="mx-auto flex min-h-full w-full max-w-5xl items-center justify-center">
+                  <button
+                    type="button"
+                    className="absolute right-4 top-4 rounded-md bg-black/50 px-2 py-1 text-xs text-white"
+                    onClick={() => setLightboxOpen(false)}
+                  >
+                    关闭
+                  </button>
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={imageUrl}
+                    alt="大图预览"
+                    className="max-h-[92vh] max-w-full rounded-lg object-contain"
+                    style={{ touchAction: "pinch-zoom" }}
+                    onClick={(event) => event.stopPropagation()}
+                  />
+                </div>
               </div>
             )}
           </>
         ) : (
           <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-            {imageShowRetryInline ? (
-              <p>预览图生成时间较长，你可以先看下方文字判断，稍后再回来查看。</p>
+            <div className="mb-2 flex items-center gap-1">
+              <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.2s]" />
+              <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.1s]" />
+              <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500" />
+              <span className="ml-1 inline-block h-2.5 w-2.5 animate-spin rounded-sm border-2 border-blue-400 border-t-transparent" />
+            </div>
+            <p>正在帮你整理这个创意</p>
+            <p className="mt-1 text-xs text-blue-700">先给你方向，再把画面补出来。</p>
+            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
+              <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
+            </div>
+            <p className="mt-2 text-xs text-blue-700">已完成约 {imageProgress}%</p>
+            {imageWaitCountdown > 0 ? (
+              <p className="mt-1 text-xs text-blue-700">预计还需约 {imageWaitCountdown} 秒</p>
             ) : (
-              <>
-                <div className="mb-2 flex items-center gap-1">
-                  <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.2s]" />
-                  <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.1s]" />
-                  <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500" />
-                </div>
-                <p>正在帮你整理这个创意</p>
-                <p className="mt-1 text-xs text-blue-700">先给你方向，再把画面补出来。</p>
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
-                  <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
-                </div>
-                <p className="mt-2 text-xs text-blue-700">已完成约 {imageProgress}%</p>
-              </>
+              <p className="mt-1 text-xs text-blue-700">稍慢一点，已自动继续处理中，请再等一下。</p>
+            )}
+            {imageState === "failed" && imageElapsedSeconds < 30 && (
+              <p className="mt-1 text-xs text-blue-700">当前生成波动，正在继续尝试，请稍候。</p>
+            )}
+            {imageMessage && <p className="mt-1 text-xs text-blue-700">提示：{imageMessage}</p>}
+            {imageShowRetryInline && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (effectiveInput) {
+                    void requestImageResult(effectiveInput, { manual: true });
+                  }
+                }}
+                className="mt-2 rounded-md border border-blue-300 bg-white px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+              >
+                重新生成预览图
+              </button>
             )}
           </div>
         )}
@@ -662,19 +695,7 @@ export default function QuickEntryResultPage() {
               {previewTail && <p className="text-xs text-slate-500">{clampText(previewTail, 22)}</p>}
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2">
-              {imageShowRetryInline && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (effectiveInput) {
-                      void requestImageResult(effectiveInput, { manual: true });
-                    }
-                  }}
-                  className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
-                >
-                  重新生成预览图
-                </button>
-              )}
+              {/* retry entry is now unified in waiting panel */}
             </div>
           </>
         )}
