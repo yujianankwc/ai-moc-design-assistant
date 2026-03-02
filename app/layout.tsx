@@ -10,6 +10,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
   viewportFit: "cover"
 };
 
@@ -27,9 +29,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <body>
-        <div className="min-h-screen overflow-x-hidden">
+    <html lang="zh-CN" className="overflow-x-hidden">
+      <body className="overflow-x-hidden">
+        <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden">
           <header className="border-b border-slate-200 bg-white">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
               <Link href="/" className="text-base font-semibold text-slate-900 sm:text-lg">

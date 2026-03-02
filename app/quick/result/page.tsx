@@ -161,6 +161,7 @@ export default function QuickEntryResultPage() {
   const [activeCorrection, setActiveCorrection] = useState("");
   const [showReferences, setShowReferences] = useState(false);
   const [showFullPreview, setShowFullPreview] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const [imageProgress, setImageProgress] = useState(8);
   const [imageElapsedSeconds, setImageElapsedSeconds] = useState(0);
   const [hasTriedImageGeneration, setHasTriedImageGeneration] = useState(false);
@@ -416,8 +417,13 @@ export default function QuickEntryResultPage() {
     };
   }, [imageState]);
 
+  const imageStateRef = useRef(imageState);
+  imageStateRef.current = imageState;
+  const imageUrlRef = useRef(imageUrl);
+  imageUrlRef.current = imageUrl;
+
   const requestImageResult = useCallback(
-    async (targetInput: QuickEntryInput, opts?: { manual?: boolean }) => {
+    async (targetInput: QuickEntryInput, opts?: { manual?: boolean; isRetry?: boolean }) => {
       const requestSeq = ++imageRequestSeqRef.current;
       setHasTriedImageGeneration(true);
       setImageState("generating");
@@ -472,6 +478,12 @@ export default function QuickEntryResultPage() {
       } catch (error) {
         if (requestSeq !== imageRequestSeqRef.current) return;
         const message = error instanceof Error ? error.message : "预览图生成失败，请稍后重试。";
+        if (!opts?.isRetry) {
+          setImageState("generating");
+          setImageMessage("首次生成较慢，正在自动重试...");
+          void requestImageResult(targetInput, { manual: true, isRetry: true });
+          return;
+        }
         setImageState("failed");
         setImageProgress(100);
         setImageMessage(message);
@@ -497,18 +509,16 @@ export default function QuickEntryResultPage() {
   );
 
   useEffect(() => {
-    const shouldGenerateImage =
-      source === "ai" &&
-      Boolean(effectiveInput?.idea) &&
-      Boolean(resolvedResult) &&
-      resultState !== "generating" &&
-      imageState !== "generating" &&
-      !imageUrl &&
-      !previewImageUrl;
-    if (!shouldGenerateImage || !effectiveInput) return;
+    if (
+      source !== "ai" ||
+      !effectiveInput?.idea ||
+      !resolvedResult ||
+      resultState === "generating"
+    ) return;
+    if (imageStateRef.current === "generating" || imageUrlRef.current || previewImageUrl) return;
 
     const requestKey = [
-      "image-refresh-v1",
+      "image-refresh-v2",
       effectiveInput.idea.trim(),
       effectiveInput.direction,
       effectiveInput.style,
@@ -520,7 +530,8 @@ export default function QuickEntryResultPage() {
     imageAutoRequestedKeyRef.current = requestKey;
 
     void requestImageResult(effectiveInput);
-  }, [effectiveInput, imageState, imageUrl, previewImageUrl, requestImageResult, resolvedResult, resultState, source]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveInput, previewImageUrl, resolvedResult, resultState, source]);
 
   if (dbLoading) {
     return (
@@ -651,12 +662,29 @@ export default function QuickEntryResultPage() {
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">AI 创意预览</h2>
         {imageUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={imageUrl}
-            alt={`${resolvedResult?.conceptTitle ?? "创意预览"} 预览图`}
-            className="mt-3 w-full rounded-lg border border-slate-200 object-cover"
-          />
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={imageUrl}
+              alt={`${resolvedResult?.conceptTitle ?? "创意预览"} 预览图`}
+              className="mt-3 w-full cursor-pointer rounded-lg border border-slate-200 object-cover active:opacity-80"
+              onClick={() => setLightboxOpen(true)}
+            />
+            <p className="mt-1 text-center text-xs text-slate-400">点击图片可查看大图，长按可保存</p>
+            {lightboxOpen && (
+              <div
+                className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
+                onClick={() => setLightboxOpen(false)}
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={imageUrl}
+                  alt="大图预览"
+                  className="max-h-[90vh] max-w-full rounded-lg object-contain"
+                />
+              </div>
+            )}
+          </>
         ) : imageExplicitlyFailed ? (
           <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
             本次预览图未生成成功，你可以点击下方「重新生成预览图」再试一次，或先看文字判断继续推进。
