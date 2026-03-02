@@ -35,11 +35,21 @@ export default function RootLayout({
               <Link href="/" className="text-base font-semibold text-slate-900 sm:text-lg">
                 AI MOC 设计助手
               </Link>
-              <nav className="-mx-1 flex w-full items-center gap-3 overflow-x-auto px-1 text-sm text-slate-600 sm:mx-0 sm:w-auto sm:overflow-visible sm:px-0">
+              <nav className="grid w-full grid-cols-5 gap-1 text-xs text-slate-600 sm:hidden">
                 {navItems.map((item) => (
-                  <Link key={item.href} href={item.href} className="shrink-0 whitespace-nowrap px-1 py-0.5 hover:text-slate-900">
-                    <span className="sm:hidden">{item.shortLabel}</span>
-                    <span className="hidden sm:inline">{item.label}</span>
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="rounded-md px-1 py-1.5 text-center text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                  >
+                    {item.shortLabel}
+                  </Link>
+                ))}
+              </nav>
+              <nav className="hidden items-center gap-4 text-sm text-slate-600 sm:flex">
+                {navItems.map((item) => (
+                  <Link key={item.href} href={item.href} className="whitespace-nowrap px-1 py-0.5 hover:text-slate-900">
+                    {item.label}
                   </Link>
                 ))}
               </nav>

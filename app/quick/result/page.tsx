@@ -51,6 +51,16 @@ function firstSentenceOf(text: string) {
   return (hit?.[0] || text).trim();
 }
 
+function getImageWaitingText(elapsedSeconds: number) {
+  if (elapsedSeconds >= 20) {
+    return "当前生成稍慢，已自动继续处理中；你可以先看下方文字判断。";
+  }
+  if (elapsedSeconds >= 8) {
+    return "正在完善细节和色彩层次，通常还需要几秒。";
+  }
+  return "正在生成预览图，先帮你把主体构图搭好。";
+}
+
 type QuickCorrectionOption = {
   key: string;
   label: string;
@@ -152,6 +162,7 @@ export default function QuickEntryResultPage() {
   const [showReferences, setShowReferences] = useState(false);
   const [showFullPreview, setShowFullPreview] = useState(false);
   const [imageProgress, setImageProgress] = useState(8);
+  const [imageElapsedSeconds, setImageElapsedSeconds] = useState(0);
   const [hasTriedImageGeneration, setHasTriedImageGeneration] = useState(false);
   const autoRequestedKeyRef = useRef("");
   const imageAutoRequestedKeyRef = useRef("");
@@ -381,30 +392,36 @@ export default function QuickEntryResultPage() {
   }, [effectiveInput, hasSessionResultForCurrentIdea, requestTextResult, resolvedResult, resultState, source]);
 
   useEffect(() => {
-    setImageUrl(previewImageUrl);
     if (previewImageUrl) {
+      setImageUrl(previewImageUrl);
       setImageState("idle");
       setImageMessage("");
       return;
     }
-    if (imageWarning && hasTriedImageGeneration) {
-      setImageState("failed");
-      setImageMessage(imageWarning);
-    } else {
-      setImageState("idle");
-      setImageMessage("");
-    }
-  }, [hasTriedImageGeneration, imageWarning, previewImageUrl]);
+    // 仅同步「已有图片」状态；失败态只由本次请求 catch 显式写入，
+    // 避免历史 warning 在新一轮生成前把 UI 误判为失败。
+    if (imageState === "generating" || imageState === "failed") return;
+    setImageUrl(null);
+    setImageState("idle");
+    setImageMessage("");
+  }, [imageState, previewImageUrl]);
 
   useEffect(() => {
     if (imageState !== "generating") {
       setImageProgress((prev) => (prev >= 100 ? 100 : 8));
+      setImageElapsedSeconds(0);
       return;
     }
     const timer = window.setInterval(() => {
       setImageProgress((prev) => Math.min(prev + (prev < 60 ? 8 : 3), 92));
     }, 900);
-    return () => window.clearInterval(timer);
+    const elapsedTimer = window.setInterval(() => {
+      setImageElapsedSeconds((prev) => prev + 1);
+    }, 1000);
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(elapsedTimer);
+    };
   }, [imageState]);
 
   const requestImageResult = useCallback(
@@ -414,6 +431,7 @@ export default function QuickEntryResultPage() {
       setImageState("generating");
       setImageMessage("预览图生成中，请稍候...");
       setImageProgress(8);
+      setImageElapsedSeconds(0);
       try {
         const response = await fetch("/api/quick/generate-image", {
           method: "POST",
@@ -550,7 +568,10 @@ export default function QuickEntryResultPage() {
     .trim()
     .replace(/^[，。；\s]+/, "");
   const showPreparingImageHint =
-    source === "ai" && Boolean(effectiveInput?.idea) && !imageUrl && imageState !== "failed";
+    source === "ai" &&
+    Boolean(effectiveInput?.idea) &&
+    !imageUrl &&
+    (imageState === "generating" || (!hasTriedImageGeneration && resultState !== "generating"));
 
   const handleUpgrade = () => {
     if (!resolvedResult) return;
@@ -652,7 +673,7 @@ export default function QuickEntryResultPage() {
           />
         ) : showPreparingImageHint ? (
           <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-            <p>正在生成预览图，马上就好。</p>
+            <p>{getImageWaitingText(imageElapsedSeconds)}</p>
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
               <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
             </div>
