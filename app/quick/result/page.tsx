@@ -570,7 +570,7 @@ export default function QuickEntryResultPage() {
     .replace(previewLead, "")
     .trim()
     .replace(/^[，。；\s]+/, "");
-  const imageExplicitlyFailed = imageState === "failed" && hasTriedImageGeneration;
+  const imageShowRetryInline = imageState === "failed" && hasTriedImageGeneration;
 
   const handleUpgrade = () => {
     if (!resolvedResult) return;
@@ -685,17 +685,32 @@ export default function QuickEntryResultPage() {
               </div>
             )}
           </>
-        ) : imageExplicitlyFailed ? (
-          <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-            本次预览图未生成成功，你可以点击下方「重新生成预览图」再试一次，或先看文字判断继续推进。
-          </div>
         ) : (
           <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-            <p>{getImageWaitingText(imageElapsedSeconds)}</p>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
-              <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
-            </div>
-            <p className="mt-2 text-xs text-blue-700">已完成约 {imageProgress}% · 正在完善细节。</p>
+            {imageShowRetryInline ? (
+              <>
+                <p>预览图生成时间较长，你可以重试或先看下方文字判断。</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (effectiveInput) {
+                      void requestImageResult(effectiveInput, { manual: true });
+                    }
+                  }}
+                  className="mt-2 rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
+                >
+                  重新生成预览图
+                </button>
+              </>
+            ) : (
+              <>
+                <p>{getImageWaitingText(imageElapsedSeconds)}</p>
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
+                  <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
+                </div>
+                <p className="mt-2 text-xs text-blue-700">已完成约 {imageProgress}%</p>
+              </>
+            )}
           </div>
         )}
         <p className="mt-3 text-xs text-slate-500">
