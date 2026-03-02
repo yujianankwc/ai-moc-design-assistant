@@ -688,20 +688,7 @@ export default function QuickEntryResultPage() {
         ) : (
           <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
             {imageShowRetryInline ? (
-              <>
-                <p>预览图生成时间较长，你可以重试或先看下方文字判断。</p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (effectiveInput) {
-                      void requestImageResult(effectiveInput, { manual: true });
-                    }
-                  }}
-                  className="mt-2 rounded-md border border-blue-300 bg-white px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-50"
-                >
-                  重新生成预览图
-                </button>
-              </>
+              <p>预览图生成时间较长，你可以先看下方文字判断，稍后再回来查看。</p>
             ) : (
               <>
                 <p>{getImageWaitingText(imageElapsedSeconds)}</p>
@@ -752,20 +739,20 @@ export default function QuickEntryResultPage() {
                   {showFullPreview ? "收起说明" : "展开说明"}
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => {
-                  if (effectiveInput) {
-                    void requestImageResult(effectiveInput, { manual: true });
-                  }
-                }}
-                disabled={imageState === "generating"}
-                className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-60"
-              >
-                重新生成预览图
-              </button>
+              {imageShowRetryInline && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (effectiveInput) {
+                      void requestImageResult(effectiveInput, { manual: true });
+                    }
+                  }}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-50"
+                >
+                  重新生成预览图
+                </button>
+              )}
             </div>
-            {imageState === "failed" && imageMessage && <p className="mt-2 text-xs text-slate-500">提示：{imageMessage}</p>}
           </>
         )}
         {!isLoading && correctionOptions.length > 0 && (
