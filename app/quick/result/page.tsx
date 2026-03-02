@@ -392,19 +392,11 @@ export default function QuickEntryResultPage() {
   }, [effectiveInput, hasSessionResultForCurrentIdea, requestTextResult, resolvedResult, resultState, source]);
 
   useEffect(() => {
-    if (previewImageUrl) {
-      setImageUrl(previewImageUrl);
-      setImageState("idle");
-      setImageMessage("");
-      return;
-    }
-    // 仅同步「已有图片」状态；失败态只由本次请求 catch 显式写入，
-    // 避免历史 warning 在新一轮生成前把 UI 误判为失败。
-    if (imageState === "generating" || imageState === "failed") return;
-    setImageUrl(null);
+    if (!previewImageUrl) return;
+    setImageUrl(previewImageUrl);
     setImageState("idle");
     setImageMessage("");
-  }, [imageState, previewImageUrl]);
+  }, [previewImageUrl]);
 
   useEffect(() => {
     if (imageState !== "generating") {
@@ -567,11 +559,7 @@ export default function QuickEntryResultPage() {
     .replace(previewLead, "")
     .trim()
     .replace(/^[，。；\s]+/, "");
-  const showPreparingImageHint =
-    source === "ai" &&
-    Boolean(effectiveInput?.idea) &&
-    !imageUrl &&
-    (imageState === "generating" || (!hasTriedImageGeneration && resultState !== "generating"));
+  const imageExplicitlyFailed = imageState === "failed" && hasTriedImageGeneration;
 
   const handleUpgrade = () => {
     if (!resolvedResult) return;
@@ -662,26 +650,24 @@ export default function QuickEntryResultPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">AI 创意预览</h2>
-        {isLoading ? (
-          <div className="mt-3 h-56 animate-pulse rounded-lg bg-slate-100" />
-        ) : imageUrl ? (
+        {imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={imageUrl}
             alt={`${resolvedResult?.conceptTitle ?? "创意预览"} 预览图`}
             className="mt-3 w-full rounded-lg border border-slate-200 object-cover"
           />
-        ) : showPreparingImageHint ? (
+        ) : imageExplicitlyFailed ? (
+          <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
+            本次预览图未生成成功，你可以点击下方「重新生成预览图」再试一次，或先看文字判断继续推进。
+          </div>
+        ) : (
           <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
             <p>{getImageWaitingText(imageElapsedSeconds)}</p>
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
               <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
             </div>
             <p className="mt-2 text-xs text-blue-700">已完成约 {imageProgress}% · 正在完善细节。</p>
-          </div>
-        ) : (
-          <div className="mt-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-600">
-            本次未成功生成预览图，你仍可先根据下方概念说明继续判断与推进。
           </div>
         )}
         <p className="mt-3 text-xs text-slate-500">
