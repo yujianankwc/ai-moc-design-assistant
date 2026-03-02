@@ -83,7 +83,7 @@ export default function RegenerateProjectButton({ projectId, currentSnapshot }: 
           type="button"
           onClick={() => handleRegenerate()}
           disabled={isLoading}
-          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70"
+          className="w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
         >
           {loadingMode === "default" ? "生成中..." : "重新生成项目方案"}
         </button>
@@ -93,7 +93,7 @@ export default function RegenerateProjectButton({ projectId, currentSnapshot }: 
             type="button"
             onClick={() => handleRegenerate(mode)}
             disabled={isLoading}
-            className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70"
+            className="w-full rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
           >
             {loadingMode === mode ? "生成中..." : modeLabelMap[mode]}
           </button>

@@ -57,12 +57,12 @@ export default function ManualEditSection({ projectId, initialContent }: Props) 
         placeholder="可先写：本轮先保留的核心设定、准备先改的两点、下一轮希望验证的风险。"
         className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
       />
-      <div className="flex items-center gap-3">
+      <div className="flex flex-wrap items-center gap-3">
         <button
           type="button"
           onClick={handleSave}
           disabled={isSaving}
-          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70"
+          className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
         >
           {isSaving ? "保存中..." : "保存人工编辑内容"}
         </button>

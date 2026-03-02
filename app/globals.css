@@ -10,10 +10,19 @@ body {
   background-color: #f8fafc;
   color: #0f172a;
   overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 *,
 *::before,
 *::after {
   box-sizing: border-box;
+}
+
+img,
+video {
+  max-width: 100%;
+  height: auto;
 }

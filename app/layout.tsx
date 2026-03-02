@@ -14,11 +14,11 @@ export const viewport: Viewport = {
 };
 
 const navItems = [
-  { href: "/", label: "首页" },
-  { href: "/quick/new", label: "轻量入口" },
-  { href: "/login", label: "登录" },
-  { href: "/projects", label: "项目列表" },
-  { href: "/projects/new", label: "创建项目" }
+  { href: "/", label: "首页", shortLabel: "首页" },
+  { href: "/quick/new", label: "轻量入口", shortLabel: "轻量" },
+  { href: "/login", label: "登录", shortLabel: "登录" },
+  { href: "/projects", label: "项目列表", shortLabel: "列表" },
+  { href: "/projects/new", label: "创建项目", shortLabel: "创建" }
 ];
 
 export default function RootLayout({
@@ -38,7 +38,8 @@ export default function RootLayout({
               <nav className="-mx-1 flex w-full items-center gap-3 overflow-x-auto px-1 text-sm text-slate-600 sm:mx-0 sm:w-auto sm:overflow-visible sm:px-0">
                 {navItems.map((item) => (
                   <Link key={item.href} href={item.href} className="shrink-0 whitespace-nowrap px-1 py-0.5 hover:text-slate-900">
-                    {item.label}
+                    <span className="sm:hidden">{item.shortLabel}</span>
+                    <span className="hidden sm:inline">{item.label}</span>
                   </Link>
                 ))}
               </nav>

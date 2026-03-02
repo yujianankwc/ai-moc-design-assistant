@@ -82,9 +82,9 @@ const fieldLabelClass = "text-sm font-medium text-slate-700";
 
 function actionButtonClass(isRecommended: boolean) {
   if (isRecommended) {
-    return "rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800";
+    return "w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 sm:w-auto";
   }
-  return "rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50";
+  return "w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto";
 }
 
 export default function ServiceRequestModals({
@@ -285,14 +285,14 @@ export default function ServiceRequestModals({
         <button
           type="button"
           onClick={handleCopyBrief}
-          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto"
         >
           复制文本
         </button>
         <button
           type="button"
           onClick={handleDownloadBrief}
-          className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          className="w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto"
         >
           导出简报（Markdown）
         </button>
@@ -338,8 +338,8 @@ export default function ServiceRequestModals({
       )}
 
       {openType && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
-          <div className="w-full max-w-xl rounded-xl bg-white p-6 shadow-lg">
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-900/50 p-3 pb-[calc(env(safe-area-inset-bottom)+12px)] sm:items-center sm:p-4">
+          <div className="max-h-[85vh] w-full max-w-xl overflow-y-auto rounded-xl bg-white p-4 shadow-lg sm:p-6">
             <div className="mb-4">
               <h3 className="text-lg font-semibold text-slate-900">{modalTitleMap[openType]}</h3>
               <p className="mt-1 text-sm text-slate-600">{modalDescMap[openType]}</p>
@@ -595,11 +595,11 @@ export default function ServiceRequestModals({
               )}
             </div>
 
-            <div className="mt-5 flex justify-end gap-2">
+            <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <button
                 type="button"
                 onClick={closeModal}
-                className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+                className="w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto"
               >
                 关闭
               </button>
@@ -608,7 +608,7 @@ export default function ServiceRequestModals({
                   type="button"
                   onClick={handleBomSubmit}
                   disabled={isSubmitting}
-                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                  className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 sm:w-auto"
                 >
                   {isSubmitting ? "提交中..." : "提交申请"}
                 </button>
@@ -618,7 +618,7 @@ export default function ServiceRequestModals({
                   type="button"
                   onClick={handleSamplingSubmit}
                   disabled={isSubmitting}
-                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                  className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 sm:w-auto"
                 >
                   {isSubmitting ? "提交中..." : "提交申请"}
                 </button>
@@ -628,7 +628,7 @@ export default function ServiceRequestModals({
                   type="button"
                   onClick={handleOriginalSubmit}
                   disabled={isSubmitting}
-                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+                  className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 sm:w-auto"
                 >
                   {isSubmitting ? "提交中..." : "提交申请"}
                 </button>

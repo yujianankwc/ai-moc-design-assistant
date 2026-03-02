@@ -96,11 +96,11 @@ export default async function ProjectsPage() {
           <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">项目列表</h1>
           <p className="text-sm text-slate-600">优先展示当前演示用户的真实项目数据。</p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
           <LogoutButton />
           <Link
             href="/projects/new"
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            className="w-full rounded-md bg-slate-900 px-4 py-2 text-center text-sm font-medium text-white hover:bg-slate-800 sm:w-auto"
           >
             新建项目
           </Link>

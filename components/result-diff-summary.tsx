@@ -34,8 +34,8 @@ export default function ResultDiffSummary({ projectId, currentSnapshot }: Props)
   }
 
   return (
-    <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-5">
-      <div className="flex items-start justify-between gap-3">
+    <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
+      <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:gap-3">
         <div>
           <h2 className="text-base font-semibold text-emerald-900">本次生成差异摘要</h2>
           <p className="mt-1 text-xs text-emerald-800">对比对象：上一次方案结果</p>
