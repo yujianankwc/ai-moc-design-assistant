@@ -139,6 +139,7 @@ export default function QuickEntryResultPage() {
   const [activeCorrection, setActiveCorrection] = useState("");
   const [showReferences, setShowReferences] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxZoom, setLightboxZoom] = useState(1);
   const [imageProgress, setImageProgress] = useState(8);
   const [imageElapsedSeconds, setImageElapsedSeconds] = useState(0);
   const [hasTriedImageGeneration, setHasTriedImageGeneration] = useState(false);
@@ -614,29 +615,65 @@ export default function QuickEntryResultPage() {
               src={imageUrl}
               alt={`${resolvedResult?.conceptTitle ?? "创意预览"} 预览图`}
               className="mt-3 w-full cursor-pointer rounded-lg border border-slate-200 object-cover active:opacity-80"
-              onClick={() => setLightboxOpen(true)}
+              onClick={() => {
+                setLightboxZoom(1);
+                setLightboxOpen(true);
+              }}
             />
             <p className="mt-1 text-center text-xs text-slate-400">点击图片可查看大图，长按可保存</p>
             {imageInfoHint && <p className="mt-1 text-center text-xs text-amber-600">{imageInfoHint}</p>}
             {lightboxOpen && (
               <div
                 className="fixed inset-0 z-50 overflow-auto bg-black/85 p-4"
-                onClick={() => setLightboxOpen(false)}
+                onClick={() => {
+                  setLightboxOpen(false);
+                  setLightboxZoom(1);
+                }}
               >
                 <div className="mx-auto flex min-h-full w-full max-w-5xl items-center justify-center">
                   <button
                     type="button"
                     className="absolute right-4 top-4 rounded-md bg-black/50 px-2 py-1 text-xs text-white"
-                    onClick={() => setLightboxOpen(false)}
+                    onClick={() => {
+                      setLightboxOpen(false);
+                      setLightboxZoom(1);
+                    }}
                   >
                     关闭
                   </button>
+                  <div
+                    className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/50 px-3 py-1.5"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      className="rounded bg-white/90 px-2 py-1 text-xs text-slate-800"
+                      onClick={() => setLightboxZoom((prev) => Math.max(1, Number((prev - 0.25).toFixed(2))))}
+                    >
+                      -
+                    </button>
+                    <span className="min-w-12 text-center text-xs text-white">{Math.round(lightboxZoom * 100)}%</span>
+                    <button
+                      type="button"
+                      className="rounded bg-white/90 px-2 py-1 text-xs text-slate-800"
+                      onClick={() => setLightboxZoom((prev) => Math.min(3, Number((prev + 0.25).toFixed(2))))}
+                    >
+                      +
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded bg-white/90 px-2 py-1 text-xs text-slate-800"
+                      onClick={() => setLightboxZoom(1)}
+                    >
+                      还原
+                    </button>
+                  </div>
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={imageUrl}
                     alt="大图预览"
                     className="max-h-[92vh] max-w-full rounded-lg object-contain"
-                    style={{ touchAction: "pinch-zoom" }}
+                    style={{ transform: `scale(${lightboxZoom})`, transformOrigin: "center center" }}
                     onClick={(event) => event.stopPropagation()}
                   />
                 </div>

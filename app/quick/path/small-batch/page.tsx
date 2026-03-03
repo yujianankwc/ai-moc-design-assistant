@@ -13,12 +13,18 @@ import {
   type PackagingLevel
 } from "@/lib/quick-path-pricing";
 
-const quantityOptions: Array<{ value: BatchQuantity; label: string; hint?: string; recommended?: boolean }> = [
-  { value: 1, label: "1 套", hint: "可做 / 单价高" },
+const coreQuantityOptions: Array<{ value: BatchQuantity; label: string; recommended?: boolean }> = [
+  { value: 1, label: "1 套" },
   { value: 10, label: "10 套" },
   { value: 50, label: "50 套", recommended: true },
   { value: 100, label: "100 套" },
   { value: 200, label: "200 套" }
+];
+
+const advancedQuantityOptions: Array<{ value: BatchQuantity; label: string }> = [
+  { value: 500, label: "500 套" },
+  { value: 1000, label: "1000 套" },
+  { value: 3000, label: "3000 套" }
 ];
 
 const packagingOptions: Array<{ value: PackagingLevel; label: string; hint: string }> = [
@@ -43,6 +49,7 @@ export default function QuickSmallBatchPage() {
   const [quantity, setQuantity] = useState<BatchQuantity>(50);
   const [packaging, setPackaging] = useState<PackagingLevel>("standard_gift");
   const [designService, setDesignService] = useState<DesignServiceLevel>("design_optimize");
+  const [showAdvancedQuantity, setShowAdvancedQuantity] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [submitStage, setSubmitStage] = useState<"editing" | "confirming" | "submitted">("editing");
   const [confirmContact, setConfirmContact] = useState("");
@@ -67,6 +74,7 @@ export default function QuickSmallBatchPage() {
 
   const isHighDesignTier = designService === "design_optimize" || designService === "senior_collab";
   const shouldShowHighPriceGuide = (quantity === 1 || quantity === 10) && isHighDesignTier;
+  const isAdvancedQuantitySelected = quantity === 500 || quantity === 1000 || quantity === 3000;
   const highPriceTips = useMemo(() => {
     const tips: string[] = [];
     if (packaging !== "basic") tips.push("改成基础包装，先压低首版成本");
@@ -118,6 +126,22 @@ export default function QuickSmallBatchPage() {
     }
     setFeedback("已记录人工沟通请求，我们会尽快联系你。");
   };
+
+  const renderQuantityButton = (value: BatchQuantity, label: string, recommended?: boolean) => (
+    <button
+      key={value}
+      type="button"
+      onClick={() => setQuantity(value)}
+      className={
+        quantity === value
+          ? "rounded-full border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs text-blue-800"
+          : "rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+      }
+    >
+      {label}
+      {recommended ? "（推荐）" : ""}
+    </button>
+  );
 
   if (submitStage === "submitted") {
     return (
@@ -227,24 +251,38 @@ export default function QuickSmallBatchPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">数量选择</h2>
-        <p className="mt-1 text-xs text-slate-500">默认推荐 50 套：这是首次试水更稳的档位。</p>
+        <p className="mt-1 text-xs text-slate-500">先选一个适合当前阶段的数量。</p>
+        <p className="mt-1 text-xs text-slate-500">首次试水建议从 50 套开始，数量越高通常单套越划算。</p>
         <div className="mt-3 flex flex-wrap gap-2">
-          {quantityOptions.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => setQuantity(option.value)}
-              className={
-                quantity === option.value
-                  ? "rounded-full border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs text-blue-800"
-                  : "rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-              }
-            >
-              {option.label}
-              {option.recommended ? "（推荐试水）" : ""}
-              {option.hint ? ` · ${option.hint}` : ""}
-            </button>
-          ))}
+          {coreQuantityOptions.map((option) => renderQuantityButton(option.value, option.label, option.recommended))}
+        </div>
+
+        <div className="mt-3">
+          <button
+            type="button"
+            onClick={() => setShowAdvancedQuantity((prev) => !prev)}
+            className="text-xs text-slate-600 hover:text-slate-800 hover:underline"
+          >
+            {showAdvancedQuantity || isAdvancedQuantitySelected ? "收起更大数量" : "查看更多数量"}
+          </button>
+        </div>
+
+        {(showAdvancedQuantity || isAdvancedQuantitySelected) && (
+          <div className="mt-2 flex flex-wrap gap-2">
+            {advancedQuantityOptions.map((option) => renderQuantityButton(option.value, option.label))}
+          </div>
+        )}
+
+        <p className="mt-3 text-xs text-slate-600">{quote.recommendation}</p>
+        <div className="mt-2 text-xs text-slate-500">
+          需要 5000 套以上？
+          <button
+            type="button"
+            onClick={() => setShowHumanForm(true)}
+            className="ml-1 text-blue-700 hover:underline"
+          >
+            联系客服询价
+          </button>
         </div>
       </section>
 

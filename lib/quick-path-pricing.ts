@@ -1,4 +1,4 @@
-export type BatchQuantity = 1 | 10 | 50 | 100 | 200;
+export type BatchQuantity = 1 | 10 | 50 | 100 | 200 | 500 | 1000 | 3000;
 export type PackagingLevel = "basic" | "standard_gift" | "premium_gift";
 export type DesignServiceLevel = "direct_sample" | "design_optimize" | "senior_collab";
 
@@ -25,7 +25,10 @@ const QUANTITY_FACTOR: Record<BatchQuantity, number> = {
   10: 1.7,
   50: 1.15,
   100: 1.0,
-  200: 0.92
+  200: 0.92,
+  500: 0.86,
+  1000: 0.79,
+  3000: 0.72
 };
 
 const PACKAGING_COST: Record<PackagingLevel, number> = {
@@ -46,7 +49,10 @@ const DYNAMIC_HINT_BY_QUANTITY: Record<BatchQuantity, string> = {
   10: "适合小范围送样或内部验证",
   50: "这是当前更推荐的试水档位",
   100: "更适合初步售卖验证",
-  200: "数量更高时，单套成本通常更容易压下来"
+  200: "数量更高时，单套成本通常更容易压下来",
+  500: "进入小批量推进档，单套成本更稳",
+  1000: "接近量产测试档，适合做渠道验证",
+  3000: "大货推进档，建议结合排产做人工询价"
 };
 
 export function formatCnyRange(range: PricingRange) {
