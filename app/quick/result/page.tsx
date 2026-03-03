@@ -351,7 +351,9 @@ export default function QuickEntryResultPage() {
     const shouldGenerateText =
       source === "ai" &&
       Boolean(effectiveInput?.idea) &&
-      resultState !== "generating";
+      resultState !== "generating" &&
+      !hasSessionResultForCurrentIdea &&
+      !dbResult;
 
     if (!shouldGenerateText || !effectiveInput) return;
     const requestKey = [
@@ -366,7 +368,7 @@ export default function QuickEntryResultPage() {
     if (autoRequestedKeyRef.current === requestKey) return;
     autoRequestedKeyRef.current = requestKey;
     void requestTextResult(effectiveInput);
-  }, [effectiveInput, hasSessionResultForCurrentIdea, requestTextResult, resolvedResult, resultState, source]);
+  }, [dbResult, effectiveInput, hasSessionResultForCurrentIdea, requestTextResult, resolvedResult, resultState, source]);
 
   useEffect(() => {
     if (!previewImageUrl) return;
@@ -685,8 +687,12 @@ export default function QuickEntryResultPage() {
                     <img
                       src={imageUrl}
                       alt="大图预览"
-                      className="h-auto max-h-none max-w-none rounded-lg"
-                      style={{ width: `${Math.max(100, Math.round(lightboxZoom * 100))}%` }}
+                      className="h-auto max-w-none rounded-lg"
+                      style={{
+                        width: `${Math.round(92 * lightboxZoom)}vw`,
+                        minWidth: "92vw",
+                        maxWidth: "none"
+                      }}
                     />
                   </div>
                 </div>
