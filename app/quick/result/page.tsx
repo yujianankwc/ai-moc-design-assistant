@@ -151,6 +151,15 @@ export default function QuickEntryResultPage() {
     setRawSearch(window.location.search);
   }, []);
 
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [lightboxOpen]);
+
   const source = searchParams.get("source");
   const input = useMemo(() => parseFromSearchParams(searchParams), [searchParams]);
   const aiSession = readQuickAIResultFromSession();
@@ -624,27 +633,15 @@ export default function QuickEntryResultPage() {
             {imageInfoHint && <p className="mt-1 text-center text-xs text-amber-600">{imageInfoHint}</p>}
             {lightboxOpen && (
               <div
-                className="fixed inset-0 z-50 overflow-auto bg-black/85 p-4"
+                className="fixed inset-0 z-50 bg-black/90"
                 onClick={() => {
                   setLightboxOpen(false);
                   setLightboxZoom(1);
                 }}
               >
-                <div className="mx-auto flex min-h-full w-full max-w-5xl items-center justify-center">
-                  <button
-                    type="button"
-                    className="absolute right-4 top-4 rounded-md bg-black/50 px-2 py-1 text-xs text-white"
-                    onClick={() => {
-                      setLightboxOpen(false);
-                      setLightboxZoom(1);
-                    }}
-                  >
-                    关闭
-                  </button>
-                  <div
-                    className="absolute bottom-4 left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-black/50 px-3 py-1.5"
-                    onClick={(event) => event.stopPropagation()}
-                  >
+                <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between bg-black/55 px-3 py-2 text-white backdrop-blur-sm">
+                  <p className="text-xs">拖动画面查看细节</p>
+                  <div className="flex items-center gap-2" onClick={(event) => event.stopPropagation()}>
                     <button
                       type="button"
                       className="rounded bg-white/90 px-2 py-1 text-xs text-slate-800"
@@ -652,7 +649,7 @@ export default function QuickEntryResultPage() {
                     >
                       -
                     </button>
-                    <span className="min-w-12 text-center text-xs text-white">{Math.round(lightboxZoom * 100)}%</span>
+                    <span className="min-w-12 text-center text-xs">{Math.round(lightboxZoom * 100)}%</span>
                     <button
                       type="button"
                       className="rounded bg-white/90 px-2 py-1 text-xs text-slate-800"
@@ -667,15 +664,31 @@ export default function QuickEntryResultPage() {
                     >
                       还原
                     </button>
+                    <button
+                      type="button"
+                      className="rounded border border-white/40 bg-black/30 px-2 py-1 text-xs text-white"
+                      onClick={() => {
+                        setLightboxOpen(false);
+                        setLightboxZoom(1);
+                      }}
+                    >
+                      关闭
+                    </button>
                   </div>
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={imageUrl}
-                    alt="大图预览"
-                    className="max-h-[92vh] max-w-full rounded-lg object-contain"
-                    style={{ transform: `scale(${lightboxZoom})`, transformOrigin: "center center" }}
-                    onClick={(event) => event.stopPropagation()}
-                  />
+                </div>
+                <div
+                  className="absolute inset-0 overflow-auto px-2 pb-2 pt-12"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="flex min-h-full min-w-full items-center justify-center">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={imageUrl}
+                      alt="大图预览"
+                      className="h-auto max-h-none max-w-none rounded-lg"
+                      style={{ width: `${Math.max(100, Math.round(lightboxZoom * 100))}%` }}
+                    />
+                  </div>
                 </div>
               </div>
             )}
