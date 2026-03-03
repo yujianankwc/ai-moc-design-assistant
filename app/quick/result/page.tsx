@@ -12,7 +12,7 @@ import {
   saveQuickPrefillToSession,
   updateQuickAIImageInSession
 } from "@/lib/quick-entry";
-import { SESSION_COOKIE_NAME, SESSION_COOKIE_VALUE } from "@/lib/session";
+import { buildQuickPathHref } from "@/lib/quick-path-context";
 import type { QuickDirection, QuickEntryInput, QuickPath, QuickScalePreference, QuickStyle } from "@/types/quick-entry";
 
 function pathButtonClass(target: QuickPath, current: QuickPath) {
@@ -122,7 +122,6 @@ export default function QuickEntryResultPage() {
   const [rawSearch, setRawSearch] = useState("");
   const searchParams = useMemo(() => new URLSearchParams(rawSearch), [rawSearch]);
   const quickProjectIdFromQuery = searchParams.get("quickProjectId")?.trim() ?? "";
-  const [feedback, setFeedback] = useState("");
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageState, setImageState] = useState<"idle" | "generating" | "failed">("idle");
   const [imageMessage, setImageMessage] = useState("");
@@ -555,28 +554,25 @@ export default function QuickEntryResultPage() {
     42
   );
 
-  const handleUpgrade = () => {
-    if (!resolvedResult) return;
-    saveQuickPrefillToSession({
+  const goQuickPath = (path: QuickPath) => {
+    const context = {
       idea: effectiveInput.idea,
       direction: effectiveInput.direction,
       style: effectiveInput.style,
       scale: effectiveInput.scale,
-      quickJudgement: resolvedResult.topJudgement,
-      quickPath: resolvedResult.suggestedPath
+      referenceImage: effectiveInput.referenceImage,
+      quickJudgement: resolvedResult?.topJudgement || "",
+      quickPath: path
+    };
+    saveQuickPrefillToSession({
+      idea: context.idea,
+      direction: context.direction,
+      style: context.style,
+      scale: context.scale,
+      quickJudgement: context.quickJudgement,
+      quickPath: path
     });
-
-    const nextParams = new URLSearchParams();
-    nextParams.set("from", "quick");
-    nextParams.set("idea", effectiveInput.idea);
-    if (effectiveInput.direction) nextParams.set("direction", effectiveInput.direction);
-    if (effectiveInput.style) nextParams.set("style", effectiveInput.style);
-    if (effectiveInput.scale) nextParams.set("scale", effectiveInput.scale);
-    nextParams.set("quickJudgement", resolvedResult.topJudgement);
-    nextParams.set("quickPath", resolvedResult.suggestedPath);
-    const nextPath = `/projects/new?${nextParams.toString()}`;
-    const hasMockSession = document.cookie.includes(`${SESSION_COOKIE_NAME}=${SESSION_COOKIE_VALUE}`);
-    router.push(hasMockSession ? nextPath : `/login?next=${encodeURIComponent(nextPath)}`);
+    router.push(buildQuickPathHref(path, context));
   };
   const handleQuickCorrection = (intent: string) => {
     if (!effectiveInput) return;
@@ -779,7 +775,7 @@ export default function QuickEntryResultPage() {
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <button
                 type="button"
-                onClick={() => setFeedback("已记录你的倾向：先做小批量路径。")}
+                onClick={() => goQuickPath("small_batch")}
                 className={pathButtonClass("small_batch", resolvedResult?.suggestedPath ?? "professional_upgrade")}
               >
                 试做成小批量产品
@@ -787,7 +783,7 @@ export default function QuickEntryResultPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setFeedback("已记录你的倾向：先走原创计划 / 众筹测试。")}
+                onClick={() => goQuickPath("creator_plan")}
                 className={pathButtonClass("creator_plan", resolvedResult?.suggestedPath ?? "professional_upgrade")}
               >
                 提交到原创计划 / 众筹
@@ -795,7 +791,7 @@ export default function QuickEntryResultPage() {
               </button>
               <button
                 type="button"
-                onClick={handleUpgrade}
+                onClick={() => goQuickPath("professional_upgrade")}
                 className={pathButtonClass("professional_upgrade", resolvedResult?.suggestedPath ?? "professional_upgrade")}
               >
                 升级为专业方案
@@ -804,7 +800,6 @@ export default function QuickEntryResultPage() {
             </div>
           </>
         )}
-        {feedback && <p className="mt-2 text-xs text-emerald-700">{feedback}</p>}
       </section>
     </section>
   );
