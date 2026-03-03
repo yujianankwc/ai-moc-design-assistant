@@ -34,10 +34,11 @@ const PACKAGING_COST: Record<PackagingLevel, number> = {
   premium_gift: 49
 };
 
-const DESIGN_FEE_BY_LEVEL: Record<DesignServiceLevel, number> = {
+const DESIGN_BASE_FEE = 199;
+const DESIGN_ADDON_BY_LEVEL: Record<DesignServiceLevel, number> = {
   direct_sample: 0,
-  design_optimize: 399,
-  senior_collab: 999
+  design_optimize: 200,
+  senior_collab: 800
 };
 
 const DYNAMIC_HINT_BY_QUANTITY: Record<BatchQuantity, string> = {
@@ -57,18 +58,26 @@ export function computeBatchQuote(input: {
   packaging: PackagingLevel;
   designService: DesignServiceLevel;
 }): BatchQuoteResult {
+  const hasDesignService = input.designService !== "direct_sample";
+  const baseDesignFee = hasDesignService ? DESIGN_BASE_FEE : 0;
+  const addonFee = DESIGN_ADDON_BY_LEVEL[input.designService];
+
   let discountAmount = 0;
-  if (input.quantity >= 100 && input.designService === "design_optimize") {
-    discountAmount = 399;
-  } else if (input.quantity >= 50 && input.designService === "design_optimize") {
-    discountAmount = 199;
+  // 满 50 套：免基础设计费
+  if (input.quantity >= 50 && hasDesignService) {
+    discountAmount += DESIGN_BASE_FEE;
   }
-  if (input.quantity >= 100 && input.designService === "senior_collab") {
-    discountAmount = 399;
+  // 满 100 套：抵扣部分设计优化费
+  if (input.quantity >= 100) {
+    if (input.designService === "design_optimize") {
+      discountAmount += 100;
+    } else if (input.designService === "senior_collab") {
+      discountAmount += 200;
+    }
   }
 
-  const baseDesignFee = DESIGN_FEE_BY_LEVEL[input.designService];
-  const designFee = Math.max(0, baseDesignFee - discountAmount);
+  const rawDesignFee = baseDesignFee + addonFee;
+  const designFee = Math.max(0, rawDesignFee - discountAmount);
   const unitPriceEstimate = BASE_UNIT_COST * QUANTITY_FACTOR[input.quantity] + PACKAGING_COST[input.packaging];
   const totalPriceEstimate = unitPriceEstimate * input.quantity + BASE_HANDLING_FEE + designFee;
   const unitPriceRange: PricingRange = {

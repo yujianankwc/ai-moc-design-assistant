@@ -68,3 +68,13 @@ export function buildProfessionalProjectNewHref(context: QuickPathContext) {
   return `/projects/new?${params.toString()}`;
 }
 
+export function buildQuickResultHref(context: QuickPathContext) {
+  const params = new URLSearchParams();
+  if (context.idea) params.set("idea", context.idea);
+  if (context.direction) params.set("direction", context.direction);
+  if (context.style) params.set("style", context.style);
+  if (context.scale) params.set("scale", context.scale);
+  if (context.referenceImage) params.set("referenceImage", context.referenceImage);
+  return `/quick/result?${params.toString()}`;
+}
+

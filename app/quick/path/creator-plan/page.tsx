@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { buildQuickPathHref, readQuickPathContext } from "@/lib/quick-path-context";
+import { buildQuickPathHref, buildQuickResultHref, readQuickPathContext } from "@/lib/quick-path-context";
 
 type CreatorMode = "group_buy" | "crowdfunding";
 type TargetPeople = 10 | 30 | 50 | 100;
@@ -22,9 +22,18 @@ export default function QuickCreatorPlanPage() {
 
   const [mode, setMode] = useState<CreatorMode>("group_buy");
   const [targetPeople, setTargetPeople] = useState<TargetPeople>(30);
-  const [launched, setLaunched] = useState(false);
+  const [launchStage, setLaunchStage] = useState<"editing" | "confirming" | "launched">("editing");
   const [joinedCount, setJoinedCount] = useState(6);
   const [feedback, setFeedback] = useState("");
+  const [contact, setContact] = useState("");
+  const [contactHint, setContactHint] = useState("");
+  const [priority, setPriority] = useState(false);
+  const [showHumanForm, setShowHumanForm] = useState(false);
+  const [humanContact, setHumanContact] = useState("");
+  const [humanContactHint, setHumanContactHint] = useState("");
+  const [humanPriority, setHumanPriority] = useState(false);
+  const [saveHint, setSaveHint] = useState("");
+  const storageKey = useMemo(() => `quick_creator_plan_draft:${context.idea || "default"}`, [context.idea]);
 
   const remaining = Math.max(0, targetPeople - joinedCount);
 
@@ -39,8 +48,56 @@ export default function QuickCreatorPlanPage() {
     setMode(modeFromQuery);
   }, [modeFromQuery]);
 
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(storageKey);
+      if (!raw) return;
+      const parsed = JSON.parse(raw) as { mode?: CreatorMode; targetPeople?: TargetPeople };
+      if (parsed.mode) setMode(parsed.mode);
+      if (parsed.targetPeople) setTargetPeople(parsed.targetPeople);
+      setSaveHint("已为你恢复上次进度");
+    } catch {
+      // ignore parse errors
+    }
+  }, [storageKey]);
+
+  useEffect(() => {
+    window.localStorage.setItem(storageKey, JSON.stringify({ mode, targetPeople }));
+    setSaveHint("已为你保存当前进度");
+    const timer = window.setTimeout(() => setSaveHint(""), 2000);
+    return () => window.clearTimeout(timer);
+  }, [mode, storageKey, targetPeople]);
+
+  const handleLaunchSubmit = () => {
+    if (!contact.trim()) {
+      setFeedback("请填写手机号或微信，方便后续联系。");
+      return;
+    }
+    setLaunchStage("launched");
+    setJoinedCount(mode === "group_buy" ? 8 : 5);
+    setFeedback(`已发起${mode === "group_buy" ? "团购" : "众筹"}，可继续分享拉新。`);
+  };
+
+  const handleHumanSubmit = () => {
+    if (!humanContact.trim()) {
+      setFeedback("请填写手机号或微信。");
+      return;
+    }
+    setFeedback("已预约人工沟通，我们会尽快联系你。");
+  };
+
   return (
     <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
+      <section className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+        <div className="flex flex-wrap gap-2">
+          {["支持 1 套试做", "可做小批量推进", "支持设计优化与资深设计师联动", "可继续升级为专业方案"].map((item) => (
+            <span key={item} className="rounded-full bg-white px-3 py-1 text-xs text-slate-700">
+              {item}
+            </span>
+          ))}
+        </div>
+      </section>
+
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h1 className="text-lg font-semibold text-slate-900">原创计划 / 众筹推进</h1>
         <p className="mt-2 text-sm text-slate-700">{context.idea || "当前创意"}：先拉到第一批愿意支持的人，再继续放大投入。</p>
@@ -134,19 +191,63 @@ export default function QuickCreatorPlanPage() {
           </button>
           <button
             type="button"
-            onClick={() => {
-              setLaunched(true);
-              setJoinedCount(mode === "group_buy" ? 8 : 5);
-              setFeedback(`已发起${mode === "group_buy" ? "团购" : "众筹"}，可继续分享拉新。`);
-            }}
+            onClick={() => setLaunchStage("confirming")}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
           >
             确认发起
           </button>
         </div>
+        {saveHint && <p className="mt-2 text-xs text-slate-500">{saveHint}</p>}
       </section>
 
-      {launched && (
+      {launchStage === "confirming" && (
+        <section className="rounded-xl border border-blue-200 bg-blue-50 p-4 sm:p-5">
+          <h2 className="text-base font-semibold text-blue-900">发起前确认</h2>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">
+              模式：{mode === "group_buy" ? "发起团购" : "发起众筹"}
+            </p>
+            <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">目标：{targetPeople} 人</p>
+            <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">达标后解锁：{unlockText}</p>
+          </div>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <input
+              value={contact}
+              onChange={(event) => setContact(event.target.value)}
+              placeholder="手机号或微信（必填）"
+              className="w-full rounded-md border border-blue-200 bg-white px-3 py-2 text-sm"
+            />
+            <input
+              value={contactHint}
+              onChange={(event) => setContactHint(event.target.value)}
+              placeholder="怎么联系更方便（可选）"
+              className="w-full rounded-md border border-blue-200 bg-white px-3 py-2 text-sm"
+            />
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-xs text-blue-800">
+            <input type="checkbox" checked={priority} onChange={(event) => setPriority(event.target.checked)} />
+            希望优先沟通（可选）
+          </label>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={handleLaunchSubmit}
+              className="rounded-md bg-blue-700 px-4 py-2 text-sm font-medium text-white hover:bg-blue-600"
+            >
+              确认发起
+            </button>
+            <button
+              type="button"
+              onClick={() => setLaunchStage("editing")}
+              className="rounded-md border border-blue-300 bg-white px-4 py-2 text-sm text-blue-700 hover:bg-blue-100"
+            >
+              返回修改
+            </button>
+          </div>
+        </section>
+      )}
+
+      {launchStage === "launched" && (
         <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
           <h2 className="text-base font-semibold text-emerald-900">发起成功</h2>
           <p className="mt-2 text-sm text-emerald-900">当前已报名：{joinedCount} 人</p>
@@ -162,6 +263,21 @@ export default function QuickCreatorPlanPage() {
           >
             继续分享
           </button>
+          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+            <Link
+              href={buildQuickResultHref(context)}
+              className="inline-block rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
+            >
+              返回查看方案
+            </Link>
+            <button
+              type="button"
+              onClick={() => setShowHumanForm(true)}
+              className="rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
+            >
+              预约人工沟通
+            </button>
+          </div>
         </section>
       )}
 
@@ -179,9 +295,51 @@ export default function QuickCreatorPlanPage() {
           >
             继续专业评估
           </Link>
+          <button
+            type="button"
+            onClick={() => setShowHumanForm((prev) => !prev)}
+            className="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
+          >
+            让我们帮你看一下
+          </button>
         </div>
         {feedback && <p className="mt-2 text-xs text-emerald-700">{feedback}</p>}
       </section>
+
+      {showHumanForm && (
+        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
+          <h2 className="text-base font-semibold text-emerald-900">预约人工沟通</h2>
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <input
+              value={humanContact}
+              onChange={(event) => setHumanContact(event.target.value)}
+              placeholder="手机号或微信（必填）"
+              className="w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm"
+            />
+            <input
+              value={humanContactHint}
+              onChange={(event) => setHumanContactHint(event.target.value)}
+              placeholder="怎么联系更方便（可选）"
+              className="w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm"
+            />
+          </div>
+          <label className="mt-2 flex items-center gap-2 text-xs text-emerald-800">
+            <input
+              type="checkbox"
+              checked={humanPriority}
+              onChange={(event) => setHumanPriority(event.target.checked)}
+            />
+            希望优先沟通（可选）
+          </label>
+          <button
+            type="button"
+            onClick={handleHumanSubmit}
+            className="mt-3 rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
+          >
+            确认预约
+          </button>
+        </section>
+      )}
     </section>
   );
 }

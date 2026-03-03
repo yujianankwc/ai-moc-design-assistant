@@ -511,7 +511,8 @@ export default function QuickEntryResultPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveInput, previewImageUrl, resolvedResult, resultState, source]);
 
-  if (dbLoading) {
+  const shouldBlockForDbLoading = dbLoading && !effectiveInput && !resolvedResult;
+  if (shouldBlockForDbLoading) {
     return (
       <section className="mx-auto max-w-3xl space-y-4 rounded-xl border border-slate-200 bg-white p-6">
         <h1 className="text-xl font-semibold text-slate-900">我先帮你看了下这个创意</h1>
