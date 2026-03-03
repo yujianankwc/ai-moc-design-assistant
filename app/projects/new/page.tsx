@@ -208,6 +208,9 @@ export default function ProjectCreatePage() {
     <section className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">提交创意项目</h1>
+        <p className="mt-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-800">
+          专业完整入口（高级）
+        </p>
         <p className="text-sm text-slate-600">
           用几分钟把你的创意方向、关键约束和推进目标说清楚，我们会先生成一版可讨论的方案草案。
         </p>
@@ -356,8 +359,10 @@ export default function ProjectCreatePage() {
           </div>
         </section>
 
-        <section className="space-y-4 border-t border-slate-100 pt-5">
-          <h2 className="text-base font-semibold text-slate-900">确定这次想推进到哪一步</h2>
+        <details className="space-y-4 border-t border-slate-100 pt-5">
+          <summary className="cursor-pointer text-base font-semibold text-slate-900">
+            确定这次想推进到哪一步（可选进阶）
+          </summary>
           <p className="text-xs text-slate-500">明确目标后，系统会更聚焦地给出下一步建议。</p>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -421,10 +426,12 @@ export default function ProjectCreatePage() {
               </select>
             </label>
           </div>
-        </section>
+        </details>
 
-        <section className="space-y-4 border-t border-slate-100 pt-5">
-          <h2 className="text-base font-semibold text-slate-900">补充参考与落地约束</h2>
+        <details className="space-y-4 border-t border-slate-100 pt-5">
+          <summary className="cursor-pointer text-base font-semibold text-slate-900">
+            补充参考与落地约束（可选进阶）
+          </summary>
           <p className="text-xs text-slate-500">这部分能帮助方案更贴近你真实的执行边界。</p>
 
           <label className="space-y-2">
@@ -448,7 +455,7 @@ export default function ProjectCreatePage() {
               className={inputClass()}
             />
           </label>
-        </section>
+        </details>
       </form>
 
       <div className="flex flex-wrap items-center gap-3">

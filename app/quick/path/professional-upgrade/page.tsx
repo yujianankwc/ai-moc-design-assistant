@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { buildProfessionalProjectNewHref, buildQuickPathHref, buildQuickResultHref, readQuickPathContext } from "@/lib/quick-path-context";
 import { SESSION_COOKIE_NAME, SESSION_COOKIE_VALUE } from "@/lib/session";
+import QuickSuccessCard from "@/components/quick-success-card";
 
 type ServiceTier = "basic" | "advance" | "deep_collab";
 
@@ -126,7 +127,7 @@ export default function QuickProfessionalUpgradePage() {
     <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
       <section className="rounded-xl border border-slate-200 bg-slate-50 p-3">
         <div className="flex flex-wrap gap-2">
-          {["支持 1 套试做", "可做小批量推进", "高砖为战略合作伙伴", "可继续升级为专业方案"].map((item) => (
+          {["支持 1 套试做", "可做小批量推进", "可继续升级为专业方案"].map((item) => (
             <span key={item} className="rounded-full bg-white px-3 py-1 text-xs text-slate-700">
               {item}
             </span>
@@ -244,7 +245,7 @@ export default function QuickProfessionalUpgradePage() {
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">交付内容</h2>
         <div className="mt-3 flex flex-wrap gap-2">
-          {["决策摘要", "创意画像", "相似参考", "风险提示", "前期零件方向建议", "推荐推进路径"].map((item) => (
+          {["决策摘要", "创意画像", "风险提示", "前期零件方向建议", "推荐推进路径"].map((item) => (
             <span key={item} className="rounded-full border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700">
               {item}
             </span>
@@ -288,17 +289,12 @@ export default function QuickProfessionalUpgradePage() {
           >
             预约人工沟通
           </button>
-          <Link
-            href={buildQuickPathHref("creator_plan", context)}
-            className="rounded-md border border-blue-300 bg-blue-50 px-4 py-2 text-sm text-blue-700 hover:bg-blue-100"
-          >
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+          <Link href={buildQuickPathHref("creator_plan", context)} className="text-blue-700 hover:underline">
             去团购 / 众筹页
           </Link>
-          <button
-            type="button"
-            onClick={handleBookHuman}
-            className="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
-          >
+          <button type="button" onClick={handleBookHuman} className="text-emerald-700 hover:underline">
             让我们帮你看一下
           </button>
         </div>
@@ -307,11 +303,18 @@ export default function QuickProfessionalUpgradePage() {
       </section>
 
       {submitted && (
-        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-emerald-900">提交成功</h2>
-          <p className="mt-2 text-sm text-emerald-900">已进入专业评估队列。</p>
-          <p className="mt-1 text-sm text-emerald-900">我们会基于你补充的信息继续推进。</p>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <QuickSuccessCard
+          title="提交成功"
+          summary="已进入专业评估队列。"
+          eta="我们会基于你补充的信息继续推进，并尽快给你下一步建议。"
+          items={[
+            { label: "服务等级", value: serviceTier === "basic" ? "专业基础版" : serviceTier === "advance" ? "专业推进版" : "深度设计协作版" },
+            { label: "目标方向", value: intentType },
+            { label: "面向人群", value: audience },
+            { label: "预算范围", value: budgetRange }
+          ]}
+          actions={
+            <>
             <button
               type="button"
               onClick={goProjectNew}
@@ -332,8 +335,9 @@ export default function QuickProfessionalUpgradePage() {
             >
               返回项目页
             </Link>
-          </div>
-        </section>
+            </>
+          }
+        />
       )}
     </section>
   );

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { buildQuickPathHref, buildQuickResultHref, readQuickPathContext } from "@/lib/quick-path-context";
+import QuickSuccessCard from "@/components/quick-success-card";
 import {
   computeBatchQuote,
   formatCnyRange,
@@ -118,11 +119,99 @@ export default function QuickSmallBatchPage() {
     setFeedback("已记录人工沟通请求，我们会尽快联系你。");
   };
 
+  if (submitStage === "submitted") {
+    return (
+      <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
+        <QuickSuccessCard
+          title="已提交人工确认"
+          summary="已进入人工确认流程。"
+          eta="预计 24 小时内给你初步确认结果。"
+          items={[
+            { label: "数量", value: `${quantity} 套` },
+            { label: "包装", value: packagingOptions.find((item) => item.value === packaging)?.label || "-" },
+            { label: "设计", value: designOptions.find((item) => item.value === designService)?.label || "-" },
+            { label: "预估总价", value: formatCnyRange(quote.totalPriceRange) },
+            { label: "设计费", value: `¥${quote.designFee}` },
+            { label: "已减免", value: `¥${quote.discountAmount}` }
+          ]}
+          actions={
+            <>
+            <button
+              type="button"
+              onClick={() => setSubmitStage("editing")}
+              className="rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
+            >
+              返回查看当前方案
+            </button>
+            <Link
+              href={`${buildQuickPathHref("creator_plan", context)}&mode=group_buy`}
+              className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
+            >
+              去发起团购
+            </Link>
+            <button
+              type="button"
+              onClick={() => setShowHumanForm(true)}
+              className="rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
+            >
+              预约人工沟通
+            </button>
+            </>
+          }
+        />
+
+        {showHumanForm && (
+          <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
+            <h2 className="text-base font-semibold text-emerald-900">预约人工沟通</h2>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <input
+                value={humanContact}
+                onChange={(event) => setHumanContact(event.target.value)}
+                placeholder="手机号或微信（必填）"
+                className="w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm"
+              />
+              <input
+                value={humanContactHint}
+                onChange={(event) => setHumanContactHint(event.target.value)}
+                placeholder="怎么联系更方便（可选）"
+                className="w-full rounded-md border border-emerald-200 bg-white px-3 py-2 text-sm"
+              />
+            </div>
+            <label className="mt-2 flex items-center gap-2 text-xs text-emerald-800">
+              <input
+                type="checkbox"
+                checked={humanPriority}
+                onChange={(event) => setHumanPriority(event.target.checked)}
+              />
+              希望优先沟通（可选）
+            </label>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <button
+                type="button"
+                onClick={handleHumanContactSubmit}
+                className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
+              >
+                确认预约
+              </button>
+              <Link
+                href={buildQuickResultHref(context)}
+                className="rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
+              >
+                返回查看方案
+              </Link>
+            </div>
+            {feedback && <p className="mt-2 text-xs text-emerald-700">{feedback}</p>}
+          </section>
+        )}
+      </section>
+    );
+  }
+
   return (
     <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
       <section className="rounded-xl border border-slate-200 bg-slate-50 p-3">
         <div className="flex flex-wrap gap-2">
-          {["支持 1 套试做", "可做小批量推进", "高砖为战略合作伙伴", "支持设计优化与资深设计师联动"].map((item) => (
+          {["支持 1 套试做", "可做小批量推进", "支持设计优化与资深设计师联动"].map((item) => (
             <span key={item} className="rounded-full bg-white px-3 py-1 text-xs text-slate-700">
               {item}
             </span>
@@ -183,6 +272,7 @@ export default function QuickSmallBatchPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">设计服务</h2>
+        <p className="mt-1 text-xs text-slate-500">满 50 套免基础设计费；满 100 套可抵扣部分设计优化费。</p>
         <p className="mt-1 text-xs text-slate-500">默认推荐设计优化：适合把结构和商品表达做得更稳一点。</p>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           {designOptions.map((option) => (
@@ -201,10 +291,7 @@ export default function QuickSmallBatchPage() {
             </button>
           ))}
         </div>
-        <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-          <p>满 50 套可免基础设计费；满 100 套可抵扣部分设计优化费。</p>
-          <p className="mt-1">团购 / 众筹达标后可升级包装或减免设计费。</p>
-        </div>
+        <p className="mt-2 text-xs text-slate-500">团购 / 众筹达标后可升级包装或进一步减免设计费。</p>
       </section>
 
       <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
@@ -308,48 +395,6 @@ export default function QuickSmallBatchPage() {
         </section>
       )}
 
-      {submitStage === "submitted" && (
-        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-emerald-900">已提交人工确认</h2>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2">
-            <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">数量：{quantity} 套</p>
-            <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">
-              包装：{packagingOptions.find((item) => item.value === packaging)?.label}
-            </p>
-            <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">
-              设计：{designOptions.find((item) => item.value === designService)?.label}
-            </p>
-            <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">预估总价：{formatCnyRange(quote.totalPriceRange)}</p>
-            <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">设计费：¥{quote.designFee}</p>
-            <p className="rounded-md bg-white px-3 py-2 text-sm text-slate-700">已减免：¥{quote.discountAmount}</p>
-          </div>
-          <p className="mt-3 text-sm text-emerald-900">已进入人工确认流程。</p>
-          <p className="mt-1 text-xs text-emerald-800">预计 24 小时内给你初步确认结果。</p>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <button
-              type="button"
-              onClick={() => setSubmitStage("editing")}
-              className="rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
-            >
-              返回查看当前方案
-            </button>
-            <Link
-              href={`${buildQuickPathHref("creator_plan", context)}&mode=group_buy`}
-              className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
-            >
-              去发起团购
-            </Link>
-            <button
-              type="button"
-              onClick={() => setShowHumanForm(true)}
-              className="rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
-            >
-              预约人工沟通
-            </button>
-          </div>
-        </section>
-      )}
-
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <div className="flex flex-col gap-2 sm:flex-row">
           <button
@@ -366,16 +411,15 @@ export default function QuickSmallBatchPage() {
           >
             先保存这版报价
           </button>
-          <Link
-            href={buildQuickPathHref("professional_upgrade", context)}
-            className="rounded-md border border-blue-300 bg-blue-50 px-4 py-2 text-sm text-blue-700 hover:bg-blue-100"
-          >
+        </div>
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs">
+          <Link href={buildQuickPathHref("professional_upgrade", context)} className="text-blue-700 hover:underline">
             去专业评估
           </Link>
           <button
             type="button"
             onClick={() => setShowHumanForm((prev) => !prev)}
-            className="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
+            className="text-emerald-700 hover:underline"
           >
             让我们帮你看一下
           </button>

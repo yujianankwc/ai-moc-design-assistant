@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { buildQuickPathHref, buildQuickResultHref, readQuickPathContext } from "@/lib/quick-path-context";
+import QuickSuccessCard from "@/components/quick-success-card";
 
 type CreatorMode = "group_buy" | "crowdfunding";
 type TargetPeople = 10 | 30 | 50 | 100;
@@ -165,30 +166,8 @@ export default function QuickCreatorPlanPage() {
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <h2 className="text-base font-semibold text-slate-900">分享邀请</h2>
-        <p className="mt-2 text-xs text-slate-500">邀请成功越多，越容易获得设计费抵扣或包装升级。</p>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <button
-            type="button"
-            onClick={() => setFeedback("分享卡片已生成（内测占位）。")}
-            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-          >
-            生成分享卡片
-          </button>
-          <button
-            type="button"
-            onClick={async () => {
-              const inviteLink = `${window.location.origin}/quick/path/creator-plan?invite=${Date.now()}`;
-              try {
-                await navigator.clipboard.writeText(inviteLink);
-                setFeedback("邀请链接已复制。");
-              } catch {
-                setFeedback(`请手动复制：${inviteLink}`);
-              }
-            }}
-            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-          >
-            复制邀请链接
-          </button>
+        <p className="mt-2 text-xs text-slate-500">先确认发起，发起成功后再继续分享邀请。</p>
+        <div className="mt-3">
           <button
             type="button"
             onClick={() => setLaunchStage("confirming")}
@@ -248,33 +227,55 @@ export default function QuickCreatorPlanPage() {
       )}
 
       {launchStage === "launched" && (
-        <section className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 sm:p-5">
-          <h2 className="text-base font-semibold text-emerald-900">发起成功</h2>
-          <p className="mt-2 text-sm text-emerald-900">当前已报名：{joinedCount} 人</p>
-          <p className="mt-1 text-sm text-emerald-900">距目标还差：{remaining} 人</p>
-          <p className="mt-1 text-sm text-emerald-900">达标后解锁：{unlockText}</p>
-          <button
-            type="button"
-            onClick={() => {
-              setJoinedCount((prev) => Math.min(targetPeople, prev + 3));
-              setFeedback("已继续分享，报名人数更新中。");
-            }}
-            className="mt-3 rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
-          >
-            继续分享
-          </button>
-          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
-            <Link
-              href={buildQuickResultHref(context)}
-              className="inline-block rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
-            >
-              返回查看方案
-            </Link>
+        <QuickSuccessCard
+          title="发起成功"
+          summary={`已发起${mode === "group_buy" ? "团购" : "众筹"}，可继续分享拉新。`}
+          eta="建议今天先完成首轮分享，尽快拿到首批反馈。"
+          items={[
+            { label: "当前已报名", value: `${joinedCount} 人` },
+            { label: "距目标还差", value: `${remaining} 人` },
+            { label: "目标人数", value: `${targetPeople} 人` },
+            { label: "达标解锁", value: unlockText }
+          ]}
+          actions={
+            <>
             <button
               type="button"
-              onClick={() => setShowHumanForm(true)}
+              onClick={() => {
+                setJoinedCount((prev) => Math.min(targetPeople, prev + 3));
+                setFeedback("已继续分享，报名人数更新中。");
+              }}
+              className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
+            >
+              继续分享
+            </button>
+            <button
+              type="button"
+              onClick={async () => {
+                const inviteLink = `${window.location.origin}/quick/path/creator-plan?invite=${Date.now()}`;
+                try {
+                  await navigator.clipboard.writeText(inviteLink);
+                  setFeedback("邀请链接已复制。");
+                } catch {
+                  setFeedback(`请手动复制：${inviteLink}`);
+                }
+              }}
               className="rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
             >
+              复制邀请链接
+            </button>
+            </>
+          }
+        />
+      )}
+
+      {launchStage === "launched" && (
+        <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+          <div className="flex flex-wrap items-center gap-3 text-xs">
+            <Link href={buildQuickResultHref(context)} className="text-emerald-800 hover:underline">
+              返回查看方案
+            </Link>
+            <button type="button" onClick={() => setShowHumanForm(true)} className="text-emerald-800 hover:underline">
               预约人工沟通
             </button>
           </div>
@@ -282,24 +283,14 @@ export default function QuickCreatorPlanPage() {
       )}
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <div className="flex flex-col gap-2 sm:flex-row">
-          <Link
-            href={buildQuickPathHref("small_batch", context)}
-            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
-          >
+        <div className="flex flex-wrap items-center gap-3 text-xs">
+          <Link href={buildQuickPathHref("small_batch", context)} className="text-slate-700 hover:underline">
             回到小批量测算
           </Link>
-          <Link
-            href={buildQuickPathHref("professional_upgrade", context)}
-            className="rounded-md border border-blue-300 bg-blue-50 px-4 py-2 text-sm text-blue-700 hover:bg-blue-100"
-          >
+          <Link href={buildQuickPathHref("professional_upgrade", context)} className="text-blue-700 hover:underline">
             继续专业评估
           </Link>
-          <button
-            type="button"
-            onClick={() => setShowHumanForm((prev) => !prev)}
-            className="rounded-md border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
-          >
+          <button type="button" onClick={() => setShowHumanForm((prev) => !prev)} className="text-emerald-700 hover:underline">
             让我们帮你看一下
           </button>
         </div>

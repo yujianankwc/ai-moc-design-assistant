@@ -16,6 +16,8 @@ type ProjectCardItem = {
   viewLabel: string;
 };
 
+type FilterKey = "all" | "recent" | "quick" | "pro" | "active";
+
 const mockProjects: ProjectCardItem[] = [
   {
     id: "p-001",
@@ -67,7 +69,23 @@ function formatDate(value: string) {
   return date.toLocaleDateString("zh-CN");
 }
 
-export default async function ProjectsPage() {
+function toCompactStatusLabel(status: string) {
+  if (status.includes("完成")) return "已完成";
+  if (status.includes("生成")) return "已生成";
+  if (status.includes("草稿")) return "进行中";
+  return "进行中";
+}
+
+export default async function ProjectsPage({
+  searchParams
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const resolvedSearch = (await searchParams) || {};
+  const filterRaw = Array.isArray(resolvedSearch.filter) ? resolvedSearch.filter[0] : resolvedSearch.filter;
+  const filter: FilterKey = ["recent", "quick", "pro", "active"].includes(filterRaw || "")
+    ? (filterRaw as FilterKey)
+    : "all";
   let dbProjects: ProjectRow[] = [];
 
   try {
@@ -82,12 +100,22 @@ export default async function ProjectsPage() {
           id: item.id,
           name: clampTitle(item.title || "未命名项目"),
           projectType: isQuickProject(item.category) ? "轻量" : "专业",
-          status: isQuickProject(item.category) ? "轻量已生成" : formatStatus(item.status),
+          status: isQuickProject(item.category) ? "已生成" : toCompactStatusLabel(formatStatus(item.status)),
           updatedAt: formatDate(item.updated_at),
           viewHref: isQuickProject(item.category) ? `/quick/result?quickProjectId=${item.id}` : `/projects/${item.id}`,
-          viewLabel: isQuickProject(item.category) ? "查看创意方向结果" : "查看项目方案"
+          viewLabel: isQuickProject(item.category) ? "查看结果" : "查看方案"
         }))
       : mockProjects;
+
+  const filteredProjects = [...projects].filter((project) => {
+    if (filter === "quick") return project.projectType === "轻量";
+    if (filter === "pro") return project.projectType === "专业";
+    if (filter === "active") return project.status !== "已完成";
+    return true;
+  });
+  if (filter === "recent") {
+    filteredProjects.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  }
 
   return (
     <section className="space-y-6">
@@ -108,18 +136,32 @@ export default async function ProjectsPage() {
       </div>
 
       <div className="rounded-xl border border-slate-200 bg-white p-4">
-        <label className="block space-y-2">
-          <span className="text-sm font-medium text-slate-700">搜索项目（占位）</span>
-          <input
-            type="text"
-            placeholder="输入项目名关键词"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
-          />
-        </label>
+        <p className="text-sm font-medium text-slate-700">快速筛选</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {[
+            { key: "all", label: "全部" },
+            { key: "recent", label: "最近更新" },
+            { key: "quick", label: "轻量" },
+            { key: "pro", label: "专业" },
+            { key: "active", label: "进行中" }
+          ].map((item) => (
+            <Link
+              key={item.key}
+              href={`/projects${item.key === "all" ? "" : `?filter=${item.key}`}`}
+              className={`rounded-full px-3 py-1.5 text-xs ${
+                filter === item.key
+                  ? "border border-blue-300 bg-blue-50 text-blue-800"
+                  : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"
+              }`}
+            >
+              {item.label}
+            </Link>
+          ))}
+        </div>
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">
-        {projects.map((project) => (
+        {filteredProjects.map((project) => (
           <article key={project.id} className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
             <div className="flex flex-col items-start justify-between gap-2 sm:flex-row sm:gap-3">
               <h2 className="truncate text-base font-semibold text-slate-900" title={project.name}>

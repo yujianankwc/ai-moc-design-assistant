@@ -19,8 +19,11 @@ function pathButtonClass(target: QuickPath, current: QuickPath) {
   if (target === current) {
     return "rounded-md border border-blue-300 bg-blue-50 px-3 py-2 text-sm text-blue-800 ring-1 ring-blue-200";
   }
-  if (target === "professional_upgrade") {
+  if (target === "small_batch") {
     return "rounded-md bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800";
+  }
+  if (target === "professional_upgrade") {
+    return "rounded-md border border-slate-900 bg-white px-3 py-2 text-sm text-slate-800 hover:bg-slate-50";
   }
   return "rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50";
 }
@@ -554,6 +557,7 @@ export default function QuickEntryResultPage() {
     resolvedResult?.topJudgement || fallbackResult?.topJudgement || "正在生成中，请稍候...",
     42
   );
+  const isWaitingPrimaryView = hasTriedImageGeneration && !imageUrl;
 
   const goQuickPath = (path: QuickPath) => {
     const context = {
@@ -678,7 +682,7 @@ export default function QuickEntryResultPage() {
           </div>
         )}
         <p className="mt-3 text-xs text-slate-500">用于方向判断。</p>
-        {isLoading ? (
+        {isLoading || isWaitingPrimaryView ? (
           <div className="mt-3 space-y-2">
             <div className="h-4 w-2/5 animate-pulse rounded bg-slate-100" />
             <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
@@ -696,7 +700,7 @@ export default function QuickEntryResultPage() {
             </div>
           </>
         )}
-        {!isLoading && correctionOptions.length > 0 && (
+        {!isLoading && !isWaitingPrimaryView && correctionOptions.length > 0 && (
           <div className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-3">
             <p className="text-sm text-slate-800">换个方向再试试</p>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -723,18 +727,19 @@ export default function QuickEntryResultPage() {
         )}
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <div className="flex items-center justify-between gap-3">
-          <h2 className="text-base font-semibold text-slate-900">相似参考</h2>
-          <button
-            type="button"
-            onClick={() => setShowReferences((prev) => !prev)}
-            className="text-xs text-slate-600 underline-offset-2 hover:text-slate-800 hover:underline"
-          >
-            {showReferences ? "先收起" : "展开参考"}
-          </button>
-        </div>
-        {showReferences && (isLoading ? (
+      {!isWaitingPrimaryView && (
+        <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-slate-900">相似参考</h2>
+            <button
+              type="button"
+              onClick={() => setShowReferences((prev) => !prev)}
+              className="text-xs text-slate-600 underline-offset-2 hover:text-slate-800 hover:underline"
+            >
+              {showReferences ? "先收起" : "展开参考"}
+            </button>
+          </div>
+          {showReferences && (isLoading ? (
           <div className="mt-3 space-y-3">
             {Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className="rounded-md border border-slate-200 bg-slate-50 p-3">
@@ -753,14 +758,16 @@ export default function QuickEntryResultPage() {
                     {mapReferenceTypeLabel(item.referenceType)}
                   </span>
                 </div>
-                <p className="mt-2 text-sm text-slate-700">{item.whyRelevant}</p>
+                <p className="mt-2 text-sm text-slate-700">{clampText(item.whyRelevant, 24)}</p>
               </div>
             ))}
           </div>
         ))}
-      </section>
+        </section>
+      )}
 
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
+      {!isWaitingPrimaryView && (
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
         <h2 className="text-base font-semibold text-slate-900">下一步通路</h2>
         {isLoading ? (
           <div className="mt-3 grid gap-3 md:grid-cols-3">
@@ -801,7 +808,8 @@ export default function QuickEntryResultPage() {
             </div>
           </>
         )}
-      </section>
+        </section>
+      )}
     </section>
   );
 }
