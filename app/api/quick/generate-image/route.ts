@@ -148,6 +148,8 @@ function shouldFallbackToDefault(rawError: string, alias: QuickImageAlias) {
     lowerRaw.includes("aborted") ||
     lowerRaw.includes("aborterror") ||
     lowerRaw.includes("service unavailable") ||
+    lowerRaw.includes("channel busy") ||
+    lowerRaw.includes("channel_busy") ||
     hasServerError
   );
 }

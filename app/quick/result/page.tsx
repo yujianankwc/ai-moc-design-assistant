@@ -570,8 +570,7 @@ export default function QuickEntryResultPage() {
   const imageShowRetryInline =
     hasTriedImageGeneration &&
     !imageUrl &&
-    imageState === "failed" &&
-    imageFullTimeout;
+    (imageState === "failed" || imageFullTimeout);
   const imageFromDbMissing = !imageUrl && !hasTriedImageGeneration && Boolean(dbResult) && !dbLoading;
   const displayTopJudgement = clampText(
     resolvedResult?.topJudgement || fallbackResult?.topJudgement || "正在生成中，请稍候...",
