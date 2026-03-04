@@ -8,7 +8,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "import:scenic-5a": "node scripts/import-scenic-5a.mjs"
+    "import:scenic-5a": "node scripts/import-scenic-5a.mjs",
+    "invite:generate": "node scripts/generate-invite-code.mjs"
   },
   "keywords": [],
   "author": "",

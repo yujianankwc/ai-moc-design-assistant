@@ -13,8 +13,19 @@ export function proxy(request: NextRequest) {
   const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
   const isLoggedIn = sessionCookie === SESSION_COOKIE_VALUE;
   const isProjectsRoute = pathname.startsWith("/projects");
-  if (isProjectsRoute && !isLoggedIn) {
+  const isQuickRoute = pathname.startsWith("/quick");
+  const isProtectedPageRoute = isProjectsRoute || isQuickRoute;
+  const isProtectedApiRoute =
+    pathname.startsWith("/api/projects") || pathname.startsWith("/api/quick") || pathname.startsWith("/api/service-requests");
+
+  if (!isLoggedIn && isProtectedApiRoute) {
+    return NextResponse.json({ error: "请先输入邀请码登录。" }, { status: 401 });
+  }
+
+  if (isProtectedPageRoute && !isLoggedIn) {
     const loginUrl = new URL("/login", request.url);
+    const nextPath = `${pathname}${request.nextUrl.search}`;
+    loginUrl.searchParams.set("next", nextPath);
     const redirectResponse = NextResponse.redirect(loginUrl);
     if (!existingVisitorId) {
       redirectResponse.cookies.set(VISITOR_COOKIE_NAME, visitorId, {
@@ -25,6 +36,10 @@ export function proxy(request: NextRequest) {
       });
     }
     return redirectResponse;
+  }
+
+  if (pathname === "/login" && isLoggedIn) {
+    return NextResponse.redirect(new URL("/projects", request.url));
   }
 
   const response = NextResponse.next({

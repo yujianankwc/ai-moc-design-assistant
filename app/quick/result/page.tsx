@@ -23,7 +23,7 @@ function pathButtonClass(target: QuickPath, current: QuickPath) {
     return "rounded-md bg-slate-900 px-3 py-2 text-sm text-white hover:bg-slate-800";
   }
   if (target === "professional_upgrade") {
-    return "rounded-md border border-slate-900 bg-white px-3 py-2 text-sm text-slate-800 hover:bg-slate-50";
+    return "rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50";
   }
   return "rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 hover:bg-slate-50";
 }
@@ -402,7 +402,7 @@ export default function QuickEntryResultPage() {
   imageUrlRef.current = imageUrl;
 
   const requestImageResult = useCallback(
-    async (targetInput: QuickEntryInput, opts?: { manual?: boolean; isRetry?: boolean }) => {
+    async (targetInput: QuickEntryInput, opts?: { manual?: boolean }) => {
       const requestSeq = ++imageRequestSeqRef.current;
       setHasTriedImageGeneration(true);
       setImageState("generating");
@@ -471,12 +471,6 @@ export default function QuickEntryResultPage() {
         if (requestSeq !== imageRequestSeqRef.current) return;
         const message = error instanceof Error ? error.message : "预览图生成失败，请稍后重试。";
         setImageInfoHint("");
-        if (!opts?.isRetry) {
-          setImageState("generating");
-          setImageMessage("首次生成较慢，正在自动重试...");
-          void requestImageResult(targetInput, { manual: true, isRetry: true });
-          return;
-        }
         setImageState("failed");
         setImageProgress(100);
         setImageMessage(message);
@@ -560,10 +554,7 @@ export default function QuickEntryResultPage() {
     .replace(previewLead, "")
     .trim()
     .replace(/^[，。；\s]+/, "");
-  const imageShowRetryInline =
-    hasTriedImageGeneration &&
-    !imageUrl &&
-    ((imageState === "failed" && imageElapsedSeconds >= 30) || imageElapsedSeconds >= 90);
+  const imageShowRetryInline = hasTriedImageGeneration && !imageUrl && (imageState === "failed" || imageElapsedSeconds >= 90);
   const imageWaitCountdown = Math.max(0, 30 - imageElapsedSeconds);
   const displayTopJudgement = clampText(
     resolvedResult?.topJudgement || fallbackResult?.topJudgement || "正在生成中，请稍候...",
@@ -581,15 +572,27 @@ export default function QuickEntryResultPage() {
       quickJudgement: resolvedResult?.topJudgement || "",
       quickPath: path
     };
-    saveQuickPrefillToSession({
-      idea: context.idea,
-      direction: context.direction,
-      style: context.style,
-      scale: context.scale,
-      quickJudgement: context.quickJudgement,
-      quickPath: path
-    });
-    router.push(buildQuickPathHref(path, context));
+    try {
+      saveQuickPrefillToSession({
+        idea: context.idea,
+        direction: context.direction,
+        style: context.style,
+        scale: context.scale,
+        quickJudgement: context.quickJudgement,
+        quickPath: path
+      });
+    } catch {
+      // Some WebViews may block sessionStorage. Navigation should still work.
+    }
+    const href = buildQuickPathHref(path, context);
+    const currentPath = window.location.pathname;
+    const currentSearch = window.location.search;
+    router.push(href);
+    window.setTimeout(() => {
+      if (window.location.pathname === currentPath && window.location.search === currentSearch) {
+        window.location.assign(href);
+      }
+    }, 300);
   };
   const handleQuickCorrection = (intent: string) => {
     if (!effectiveInput) return;
@@ -718,8 +721,8 @@ export default function QuickEntryResultPage() {
             ) : (
               <p className="mt-1 text-xs text-blue-700">稍慢一点，已自动继续处理中，请再等一下。</p>
             )}
-            {imageState === "failed" && imageElapsedSeconds < 30 && (
-              <p className="mt-1 text-xs text-blue-700">当前生成波动，正在继续尝试，请稍候。</p>
+            {imageState === "failed" && (
+              <p className="mt-1 text-xs text-blue-700">当前生成失败，可点击下方按钮重试。</p>
             )}
             {imageMessage && <p className="mt-1 text-xs text-blue-700">提示：{imageMessage}</p>}
             {imageShowRetryInline && (
@@ -859,7 +862,7 @@ export default function QuickEntryResultPage() {
                 className={pathButtonClass("professional_upgrade", resolvedResult?.suggestedPath ?? "professional_upgrade")}
               >
                 升级为专业方案
-                <span className="mt-1 block text-xs text-slate-200">做深做细</span>
+                <span className="mt-1 block text-xs text-slate-500">做深做细</span>
               </button>
             </div>
           </>

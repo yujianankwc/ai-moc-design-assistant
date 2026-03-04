@@ -14,6 +14,8 @@ type GenerateQuickPreviewImageInput = {
   imageModelAlias?: "default" | "nano_banner" | "nano_banana";
 };
 
+type QuickImageAlias = "default" | "nano_banner" | "nano_banana";
+
 function toDataUrl(base64: string) {
   return `data:image/png;base64,${base64}`;
 }
@@ -28,7 +30,7 @@ function isHttpUrl(value?: string) {
   }
 }
 
-function pickImageConfig(alias: "default" | "nano_banner" | "nano_banana") {
+function pickImageConfig(alias: QuickImageAlias) {
   const defaultConfig = {
     apiKey: process.env.AI_IMAGE_API_KEY || process.env.AI_API_KEY || "",
     baseUrl: process.env.AI_IMAGE_BASE_URL || process.env.AI_BASE_URL || "https://api.openai.com/v1",
@@ -60,6 +62,36 @@ function pickImageConfig(alias: "default" | "nano_banner" | "nano_banana") {
   return defaultConfig;
 }
 
+function pickImageSize(alias: QuickImageAlias) {
+  const defaultSize = process.env.AI_IMAGE_SIZE || "2048x2048";
+  if (alias === "nano_banana" || alias === "nano_banner") {
+    // Nano channel is generally more stable with lower default size.
+    return process.env.AI_IMAGE_SIZE_NANO_BANANA || process.env.AI_IMAGE_SIZE_NANO_BANNER || "1024x1024";
+  }
+  const normalized = defaultSize.trim().toLowerCase();
+  const matched = normalized.match(/^(\d+)\s*x\s*(\d+)$/);
+  if (matched) {
+    const width = Number(matched[1]);
+    const height = Number(matched[2]);
+    // Seedream-like channels may reject sizes below 3,686,400 pixels.
+    if (Number.isFinite(width) && Number.isFinite(height) && width * height < 3_686_400) {
+      return "2048x2048";
+    }
+  }
+  return defaultSize;
+}
+
+function parseTimeoutMs(alias: QuickImageAlias) {
+  const aliasTimeoutRaw =
+    alias === "nano_banana" || alias === "nano_banner"
+      ? process.env.AI_IMAGE_TIMEOUT_MS_NANO_BANANA || process.env.AI_IMAGE_TIMEOUT_MS_NANO_BANNER
+      : undefined;
+  const raw = aliasTimeoutRaw || process.env.AI_IMAGE_TIMEOUT_MS || "90000";
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 30000) return 90000;
+  return Math.min(parsed, 300000);
+}
+
 export async function generateQuickPreviewImage(input: GenerateQuickPreviewImageInput) {
   const defaultAlias =
     process.env.AI_IMAGE_DEFAULT_ALIAS === "nano_banner" || process.env.AI_IMAGE_DEFAULT_ALIAS === "nano_banana"
@@ -67,7 +99,8 @@ export async function generateQuickPreviewImage(input: GenerateQuickPreviewImage
       : "default";
   const resolvedAlias = input.imageModelAlias || defaultAlias;
   const { apiKey, baseUrl, model: imageModel, endpoint } = pickImageConfig(resolvedAlias);
-  const imageSize = process.env.AI_IMAGE_SIZE || "2048x2048";
+  const imageSize = pickImageSize(resolvedAlias);
+  const timeoutMs = parseTimeoutMs(resolvedAlias);
   const requestUrl = endpoint || `${baseUrl}/images/generations`;
 
   if (!apiKey || !imageModel) {
@@ -75,7 +108,7 @@ export async function generateQuickPreviewImage(input: GenerateQuickPreviewImage
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 60000);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
     const prompt = `${buildImagePromptFromSummary(input)}${
@@ -85,12 +118,15 @@ export async function generateQuickPreviewImage(input: GenerateQuickPreviewImage
       model: imageModel,
       prompt,
       size: imageSize,
-      response_format: "url",
-      sequential_image_generation: "disabled",
-      stream: false,
-      watermark: true
+      response_format: "url"
     };
-    if (isHttpUrl(input.referenceImage)) {
+    // Nano endpoint accepts additional generation controls.
+    if (resolvedAlias === "nano_banana" || resolvedAlias === "nano_banner") {
+      bodyPayload.sequential_image_generation = "disabled";
+      bodyPayload.stream = false;
+      bodyPayload.watermark = true;
+    }
+    if ((resolvedAlias === "nano_banana" || resolvedAlias === "nano_banner") && isHttpUrl(input.referenceImage)) {
       bodyPayload.reference_image_url = input.referenceImage;
     }
     const response = await fetch(requestUrl, {
