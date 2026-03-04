@@ -572,11 +572,12 @@ export default function QuickEntryResultPage() {
     !imageUrl &&
     imageState === "failed" &&
     imageFullTimeout;
+  const imageFromDbMissing = !imageUrl && !hasTriedImageGeneration && Boolean(dbResult) && !dbLoading;
   const displayTopJudgement = clampText(
     resolvedResult?.topJudgement || fallbackResult?.topJudgement || "正在生成中，请稍候...",
     42
   );
-  const isWaitingPrimaryView = hasTriedImageGeneration && !imageUrl;
+  const isWaitingPrimaryView = hasTriedImageGeneration && !imageUrl && !imageFromDbMissing;
 
   const goQuickPath = (path: QuickPath) => {
     const context = {
@@ -718,6 +719,22 @@ export default function QuickEntryResultPage() {
               </div>
             )}
           </>
+        ) : imageFromDbMissing ? (
+          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+            <p>这个项目目前还没有预览图。</p>
+            <p className="mt-1 text-xs text-slate-500">你可以现在补一张，方便后续回看与对比。</p>
+            <button
+              type="button"
+              onClick={() => {
+                if (effectiveInput) {
+                  void requestImageResult(effectiveInput, { manual: true });
+                }
+              }}
+              className="mt-2 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
+            >
+              生成预览图
+            </button>
+          </div>
         ) : (
           <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
             <div className="mb-2 flex items-center gap-1">

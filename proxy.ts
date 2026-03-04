@@ -39,7 +39,7 @@ export function proxy(request: NextRequest) {
   }
 
   if (pathname === "/login" && isLoggedIn) {
-    return NextResponse.redirect(new URL("/projects", request.url));
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   const response = NextResponse.next({

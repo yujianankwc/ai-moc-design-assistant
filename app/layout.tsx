@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import Link from "next/link";
+import SafeNavLink from "@/components/safe-nav-link";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -32,27 +32,49 @@ export default function RootLayout({
     <html lang="zh-CN" className="overflow-x-hidden">
       <body className="overflow-x-hidden">
         <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden">
-          <header className="border-b border-slate-200 bg-white">
+          <header className="relative z-40 border-b border-slate-200 bg-white">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
-              <Link href="/" className="text-base font-semibold text-slate-900 sm:text-lg">
+              <SafeNavLink href="/" className="text-base font-semibold text-slate-900 sm:text-lg">
                 AI MOC 设计助手
-              </Link>
+              </SafeNavLink>
               <nav className="grid w-full grid-cols-5 gap-1 text-xs text-slate-600 sm:hidden">
                 {navItems.map((item) => (
-                  <Link
+                  <SafeNavLink
                     key={item.href}
                     href={item.href}
+                    activePrefixes={
+                      item.href === "/projects"
+                        ? ["/projects"]
+                        : item.href === "/quick/new"
+                          ? ["/quick"]
+                          : [item.href]
+                    }
+                    activeExcludes={item.href === "/projects" ? ["/projects/new"] : undefined}
                     className="rounded-md px-1 py-1.5 text-center text-slate-700 hover:bg-slate-100 hover:text-slate-900"
+                    activeClassName="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
                   >
                     {item.shortLabel}
-                  </Link>
+                  </SafeNavLink>
                 ))}
               </nav>
               <nav className="hidden items-center gap-4 text-sm text-slate-600 sm:flex">
                 {navItems.map((item) => (
-                  <Link key={item.href} href={item.href} className="whitespace-nowrap px-1 py-0.5 hover:text-slate-900">
+                  <SafeNavLink
+                    key={item.href}
+                    href={item.href}
+                    activePrefixes={
+                      item.href === "/projects"
+                        ? ["/projects"]
+                        : item.href === "/quick/new"
+                          ? ["/quick"]
+                          : [item.href]
+                    }
+                    activeExcludes={item.href === "/projects" ? ["/projects/new"] : undefined}
+                    className="whitespace-nowrap rounded px-2 py-1 hover:text-slate-900"
+                    activeClassName="bg-slate-100 text-slate-900"
+                  >
                     {item.label}
-                  </Link>
+                  </SafeNavLink>
                 ))}
               </nav>
             </div>
