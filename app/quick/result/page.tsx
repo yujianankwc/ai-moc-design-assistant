@@ -41,6 +41,13 @@ function firstSentenceOf(text: string) {
   return (hit?.[0] || text).trim();
 }
 
+function parsePublicSeconds(value: string | undefined, fallbackSeconds: number) {
+  const raw = Number(value);
+  if (!Number.isFinite(raw)) return fallbackSeconds;
+  const rounded = Math.round(raw);
+  return rounded > 0 ? rounded : fallbackSeconds;
+}
+
 type QuickCorrectionOption = {
   key: string;
   label: string;
@@ -127,7 +134,7 @@ export default function QuickEntryResultPage() {
   const quickProjectIdFromQuery = searchParams.get("quickProjectId")?.trim() ?? "";
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageState, setImageState] = useState<"idle" | "generating" | "failed">("idle");
-  const [imageMessage, setImageMessage] = useState("");
+  const [, setImageMessage] = useState("");
   const [imageInfoHint, setImageInfoHint] = useState("");
   const [resultState, setResultState] = useState<"idle" | "generating" | "failed">("idle");
   const [quickProjectId, setQuickProjectId] = useState(quickProjectIdFromQuery);
@@ -554,8 +561,17 @@ export default function QuickEntryResultPage() {
     .replace(previewLead, "")
     .trim()
     .replace(/^[，。；\s]+/, "");
-  const imageShowRetryInline = hasTriedImageGeneration && !imageUrl && (imageState === "failed" || imageElapsedSeconds >= 90);
-  const imageWaitCountdown = Math.max(0, 30 - imageElapsedSeconds);
+  const imageWaitSeconds = parsePublicSeconds(process.env.NEXT_PUBLIC_IMAGE_WAIT_SECONDS, 30);
+  const imageRetrySeconds = parsePublicSeconds(process.env.NEXT_PUBLIC_IMAGE_RETRY_SECONDS, 90);
+  const normalizedRetrySeconds = Math.max(imageRetrySeconds, imageWaitSeconds + 1);
+  const imageInitialCountdown = Math.max(0, imageWaitSeconds - imageElapsedSeconds);
+  const imageFullTimeout = imageElapsedSeconds >= normalizedRetrySeconds;
+  const showLongWaitGuidance = imageElapsedSeconds >= imageWaitSeconds && !imageFullTimeout;
+  const imageShowRetryInline =
+    hasTriedImageGeneration &&
+    !imageUrl &&
+    imageState === "failed" &&
+    imageFullTimeout;
   const displayTopJudgement = clampText(
     resolvedResult?.topJudgement || fallbackResult?.topJudgement || "正在生成中，请稍候...",
     42
@@ -716,15 +732,22 @@ export default function QuickEntryResultPage() {
               <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
             </div>
             <p className="mt-2 text-xs text-blue-700">已完成约 {imageProgress}%</p>
-            {imageWaitCountdown > 0 ? (
-              <p className="mt-1 text-xs text-blue-700">预计还需约 {imageWaitCountdown} 秒</p>
+            {imageInitialCountdown > 0 ? (
+              <p className="mt-1 text-xs text-blue-700">预计还需约 {imageInitialCountdown} 秒</p>
             ) : (
-              <p className="mt-1 text-xs text-blue-700">稍慢一点，已自动继续处理中，请再等一下。</p>
+              <p className="mt-1 text-xs text-blue-700">画面还在生成中，你可以先看下方文字结果。</p>
             )}
-            {imageState === "failed" && (
-              <p className="mt-1 text-xs text-blue-700">当前生成失败，可点击下方按钮重试。</p>
+            {showLongWaitGuidance && (
+              <div className="mt-1 text-xs text-blue-700">
+                <span>也可以稍后回来查看，生成完成后会自动展示在项目里。</span>
+                <Link href="/projects" className="ml-2 underline underline-offset-2 hover:text-blue-800">
+                  去项目列表稍后查看
+                </Link>
+              </div>
             )}
-            {imageMessage && <p className="mt-1 text-xs text-blue-700">提示：{imageMessage}</p>}
+            {imageShowRetryInline && (
+              <p className="mt-1 text-xs text-blue-700">生成时间较长，你可以点击下方按钮重试，或稍后从项目列表查看。</p>
+            )}
             {imageShowRetryInline && (
               <button
                 type="button"
