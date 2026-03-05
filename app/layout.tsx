@@ -17,10 +17,8 @@ export const viewport: Viewport = {
 
 const navItems = [
   { href: "/", label: "首页", shortLabel: "首页" },
-  { href: "/quick/new", label: "轻量入口", shortLabel: "轻量" },
-  { href: "/login", label: "登录", shortLabel: "登录" },
-  { href: "/projects", label: "项目列表", shortLabel: "列表" },
-  { href: "/projects/new", label: "创建项目", shortLabel: "创建" }
+  { href: "/projects", label: "我的项目", shortLabel: "项目" },
+  { href: "/login", label: "登录", shortLabel: "登录" }
 ];
 
 export default function RootLayout({
@@ -40,19 +38,12 @@ export default function RootLayout({
                 </SafeNavLink>
                 <p className="mt-0.5 text-xs text-slate-500">人人都是积木设计师</p>
               </div>
-              <nav className="grid w-full grid-cols-5 gap-1 text-xs text-slate-600 sm:hidden">
+              <nav className="grid w-full grid-cols-3 gap-1 text-xs text-slate-600 sm:hidden">
                 {navItems.map((item) => (
                   <SafeNavLink
                     key={item.href}
                     href={item.href}
-                    activePrefixes={
-                      item.href === "/projects"
-                        ? ["/projects"]
-                        : item.href === "/quick/new"
-                          ? ["/quick"]
-                          : [item.href]
-                    }
-                    activeExcludes={item.href === "/projects" ? ["/projects/new"] : undefined}
+                    activePrefixes={item.href === "/projects" ? ["/projects"] : [item.href]}
                     className="rounded-md px-1 py-1.5 text-center text-slate-700 hover:bg-slate-100 hover:text-slate-900"
                     activeClassName="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
                   >
@@ -65,14 +56,7 @@ export default function RootLayout({
                   <SafeNavLink
                     key={item.href}
                     href={item.href}
-                    activePrefixes={
-                      item.href === "/projects"
-                        ? ["/projects"]
-                        : item.href === "/quick/new"
-                          ? ["/quick"]
-                          : [item.href]
-                    }
-                    activeExcludes={item.href === "/projects" ? ["/projects/new"] : undefined}
+                    activePrefixes={item.href === "/projects" ? ["/projects"] : [item.href]}
                     className="whitespace-nowrap rounded px-2 py-1 hover:text-slate-900"
                     activeClassName="bg-slate-100 text-slate-900"
                   >
