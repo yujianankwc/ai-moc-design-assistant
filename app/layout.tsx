@@ -31,7 +31,7 @@ export default function RootLayout({
   return (
     <html lang="zh-CN" className="overflow-x-hidden">
       <body className="overflow-x-hidden">
-        <div className="min-h-screen w-full max-w-[100vw] overflow-x-hidden">
+        <div className="flex min-h-screen w-full max-w-[100vw] flex-col overflow-x-hidden">
           <header className="relative z-40 border-b border-slate-200 bg-white">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
               <SafeNavLink href="/" className="text-base font-semibold text-slate-900 sm:text-lg">
@@ -80,7 +80,12 @@ export default function RootLayout({
             </div>
           </header>
 
-          <main className="mx-auto w-full max-w-5xl px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+          <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
+          <footer className="border-t border-slate-100 bg-white/80 py-3">
+            <p className="mx-auto w-full max-w-5xl px-4 text-center text-[11px] text-slate-400 sm:px-6">
+              鲁ICP备2020043483号-1，©2020-2026 酷玩潮®
+            </p>
+          </footer>
         </div>
       </body>
     </html>
