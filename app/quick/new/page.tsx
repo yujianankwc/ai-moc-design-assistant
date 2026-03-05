@@ -297,55 +297,6 @@ export default function QuickEntryNewPage() {
           </button>
           {showMoreSettings && (
             <div className="space-y-4">
-              <div className="grid gap-4 md:grid-cols-3">
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-slate-700">方向偏好（可选）</span>
-                  <select
-                    value={form.direction}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, direction: event.target.value as QuickDirection | "" }))
-                    }
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
-                  >
-                    <option value="">我还不确定，先帮我判断</option>
-                    <option value="display">展示感</option>
-                    <option value="cost">成本友好</option>
-                    <option value="production">可量产</option>
-                  </select>
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-slate-700">风格偏好（可选）</span>
-                  <select
-                    value={form.style}
-                    onChange={(event) => setForm((prev) => ({ ...prev, style: event.target.value as QuickStyle | "" }))}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
-                  >
-                    <option value="">我还不确定，先帮我判断</option>
-                    <option value="cute">可爱</option>
-                    <option value="mechanical">机械</option>
-                    <option value="realistic">写实</option>
-                    <option value="fantasy">奇幻</option>
-                  </select>
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-slate-700">规模偏好（可选）</span>
-                  <select
-                    value={form.scale}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, scale: event.target.value as QuickScalePreference | "" }))
-                    }
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
-                  >
-                    <option value="">我还不确定，先帮我判断</option>
-                    <option value="small">小型（约80-200颗）</option>
-                    <option value="medium">中型（约200-600颗）</option>
-                    <option value="large">大型（约600-1200颗）</option>
-                  </select>
-                </label>
-              </div>
-
               <div className="space-y-2">
                 <span className="text-sm font-medium text-slate-700">参考图（可选）</span>
                 <p className="text-xs text-slate-500">
@@ -404,14 +355,55 @@ export default function QuickEntryNewPage() {
                 {referenceUploadState === "done" && (
                   <p className="text-xs text-green-700">参考图已上传，将用于引导 AI 生成方向。</p>
                 )}
+              </div>
 
-                <input
-                  type="text"
-                  value={form.referenceImage}
-                  onChange={(event) => setForm((prev) => ({ ...prev, referenceImage: event.target.value }))}
-                  placeholder="也可以直接粘贴参考图 URL 链接"
-                  className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
-                />
+              <div className="grid gap-4 md:grid-cols-3">
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">方向偏好（可选）</span>
+                  <select
+                    value={form.direction}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, direction: event.target.value as QuickDirection | "" }))
+                    }
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
+                  >
+                    <option value="">我还不确定，先帮我判断</option>
+                    <option value="display">展示感</option>
+                    <option value="cost">成本友好</option>
+                    <option value="production">可量产</option>
+                  </select>
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">风格偏好（可选）</span>
+                  <select
+                    value={form.style}
+                    onChange={(event) => setForm((prev) => ({ ...prev, style: event.target.value as QuickStyle | "" }))}
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
+                  >
+                    <option value="">我还不确定，先帮我判断</option>
+                    <option value="cute">可爱</option>
+                    <option value="mechanical">机械</option>
+                    <option value="realistic">写实</option>
+                    <option value="fantasy">奇幻</option>
+                  </select>
+                </label>
+
+                <label className="block space-y-2">
+                  <span className="text-sm font-medium text-slate-700">规模偏好（可选）</span>
+                  <select
+                    value={form.scale}
+                    onChange={(event) =>
+                      setForm((prev) => ({ ...prev, scale: event.target.value as QuickScalePreference | "" }))
+                    }
+                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
+                  >
+                    <option value="">我还不确定，先帮我判断</option>
+                    <option value="small">小型（约80-200颗）</option>
+                    <option value="medium">中型（约200-600颗）</option>
+                    <option value="large">大型（约600-1200颗）</option>
+                  </select>
+                </label>
               </div>
             </div>
           )}
