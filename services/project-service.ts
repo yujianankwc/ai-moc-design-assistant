@@ -566,7 +566,7 @@ export async function getQuickProjectByIdForDemoUser(projectId: string) {
 
 export async function updateQuickProjectImageForDemoUser(input: {
   projectId: string;
-  idea: string;
+  idea?: string;
   previewImageUrl?: string | null;
   imageWarning?: string;
 }) {
@@ -592,7 +592,7 @@ export async function updateQuickProjectImageForDemoUser(input: {
   if (!quickData) {
     throw new Error("轻量项目数据缺失，无法更新预览图。");
   }
-  if (quickData.input.idea.trim() !== input.idea.trim()) {
+  if (input.idea && quickData.input.idea.trim() !== input.idea.trim()) {
     throw new Error("轻量项目校验失败，无法更新预览图。");
   }
 

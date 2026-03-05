@@ -5,6 +5,7 @@ import {
   decideQuickImageMode
 } from "@/lib/quick-generation-pipeline";
 import { generateQuickPreviewImage, isImageGenerationUpstreamError } from "@/services/ai-quick-image";
+import { updateQuickProjectImageForDemoUser } from "@/services/project-service";
 import type { QuickDirection, QuickEntryInput, QuickScalePreference, QuickStyle } from "@/types/quick-entry";
 
 type QuickGenerateImageBody = {
@@ -15,6 +16,7 @@ type QuickGenerateImageBody = {
   referenceImage?: string;
   correctionIntent?: string;
   regenerateToken?: string;
+  quickProjectId?: string;
   imageModelAlias?: "default" | "nano_banner" | "nano_banana";
 };
 
@@ -204,6 +206,8 @@ export async function POST(request: Request) {
   let usedReferenceImageForLog = false;
   let ideaLengthForLog = 0;
   let usedFallbackForLog = false;
+  let quickProjectIdForPersist = "";
+  let ideaForPersist = "";
   try {
     const body = (await request.json()) as QuickGenerateImageBody;
     const input = sanitizeInput(body);
@@ -220,6 +224,8 @@ export async function POST(request: Request) {
     aliasForLog = requestedAlias;
     usedReferenceImageForLog = usedReferenceImage;
     ideaLengthForLog = ideaLength;
+    quickProjectIdForPersist = typeof body.quickProjectId === "string" ? body.quickProjectId.trim() : "";
+    ideaForPersist = input.idea;
     let previewImageUrl = "";
     let usedFallbackToDefault = false;
     let referenceImageDropped = false;
@@ -315,11 +321,34 @@ export async function POST(request: Request) {
       ideaLength
     });
 
+    let persistedToProject = false;
+    const quickProjectId = quickProjectIdForPersist;
+    if (quickProjectId) {
+      try {
+        await updateQuickProjectImageForDemoUser({
+          projectId: quickProjectId,
+          idea: input.idea,
+          previewImageUrl,
+          imageWarning: ""
+        });
+        persistedToProject = true;
+      } catch (persistError) {
+        console.warn(
+          JSON.stringify({
+            tag: "quick_image_generation_persist_failed",
+            quickProjectId,
+            message: persistError instanceof Error ? persistError.message : String(persistError || "")
+          })
+        );
+      }
+    }
+
     return NextResponse.json({
       previewImageUrl,
       usedFallbackToDefault,
       usedReferenceImage,
-      referenceImageDropped
+      referenceImageDropped,
+      persistedToProject
     });
   } catch (error) {
     const errorType = classifyImageError(error);
@@ -335,6 +364,17 @@ export async function POST(request: Request) {
       ideaLength: ideaLengthForLog,
       ...upstreamIds
     });
+    if (quickProjectIdForPersist && ideaForPersist) {
+      try {
+        await updateQuickProjectImageForDemoUser({
+          projectId: quickProjectIdForPersist,
+          idea: ideaForPersist,
+          imageWarning: toFriendlyImageError(error)
+        });
+      } catch {
+        // Ignore persist warning failure in error path.
+      }
+    }
     return NextResponse.json(
       {
         error: toFriendlyImageError(error),

@@ -28,10 +28,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
   try {
     const { id } = await context.params;
     const body = (await request.json()) as UpdateImageBody;
-    const idea = typeof body.idea === "string" ? body.idea.trim() : "";
-    if (!idea) {
-      return NextResponse.json({ error: "缺少创意内容，无法更新轻量项目。" }, { status: 400 });
-    }
+    const idea = typeof body.idea === "string" ? body.idea.trim() : undefined;
 
     await updateQuickProjectImageForDemoUser({
       projectId: id,

@@ -435,6 +435,7 @@ export default function QuickEntryResultPage() {
             scale: targetInput.scale,
             referenceImage: targetInput.referenceImage,
             correctionIntent: targetInput.correctionIntent,
+            quickProjectId: quickProjectId || undefined,
             regenerateToken: opts?.manual ? String(Date.now()) : undefined
           })
         });
@@ -444,6 +445,7 @@ export default function QuickEntryResultPage() {
               usedFallbackToDefault?: boolean;
               usedReferenceImage?: boolean;
               referenceImageDropped?: boolean;
+              persistedToProject?: boolean;
               error?: string;
               retryable?: boolean;
             }
@@ -463,15 +465,18 @@ export default function QuickEntryResultPage() {
         setReferenceImageWasDropped(Boolean(data.referenceImageDropped));
         const messageParts: string[] = [];
         if (data.referenceImageDropped) {
-          messageParts.push("排队的人有点多，换了一位设计师帮你，参考图暂未用上，可点下方按钮再试一次。");
+          messageParts.push("排队的人有点多，换了一位设计师帮你，参考图这次暂未用上。");
         } else if (data.usedReferenceImage) {
           messageParts.push("已参考你的图片来画的哦。");
         }
         if (!data.referenceImageDropped && data.usedFallbackToDefault) {
           messageParts.push("排队设计的人有点多，已经换了一位设计师帮你搞定。");
         }
+        if (quickProjectId && !data.persistedToProject) {
+          messageParts.push("图片已生成，正在同步到项目列表。");
+        }
         setImageInfoHint(messageParts.join(" "));
-        if (quickProjectId) {
+        if (quickProjectId && !data.persistedToProject) {
           void fetch(`/api/quick/projects/${quickProjectId}`, {
             method: "PATCH",
             headers: {
@@ -520,18 +525,6 @@ export default function QuickEntryResultPage() {
         setImageState("failed");
         setImageProgress(100);
         setImageMessage(message);
-        if (quickProjectId) {
-          void fetch(`/api/quick/projects/${quickProjectId}`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              idea: targetInput.idea,
-              imageWarning: message
-            })
-          });
-        }
         updateQuickAIImageInSession({
           idea: targetInput.idea,
           imageWarning: message
