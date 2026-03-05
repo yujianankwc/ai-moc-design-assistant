@@ -169,6 +169,105 @@ function extractIdsFromRawText(rawText: string): UpstreamIds {
   }
 }
 
+function buildRequestBody(
+  resolvedAlias: QuickImageAlias,
+  imageModel: string,
+  imageSize: string,
+  prompt: string,
+  referenceImage?: string
+): Record<string, unknown> {
+  const bodyPayload: Record<string, unknown> = {
+    model: imageModel,
+    prompt,
+    size: imageSize,
+    response_format: "url"
+  };
+  if (resolvedAlias === "nano_banana" || resolvedAlias === "nano_banner") {
+    bodyPayload.sequential_image_generation = "disabled";
+    bodyPayload.stream = false;
+    bodyPayload.watermark = true;
+    if (isHttpUrl(referenceImage)) {
+      bodyPayload.reference_image_url = referenceImage;
+    }
+  } else if (resolvedAlias === "default" && isHttpUrl(referenceImage)) {
+    bodyPayload.image = referenceImage;
+    bodyPayload.sequential_image_generation = "disabled";
+    bodyPayload.stream = false;
+    bodyPayload.watermark = true;
+  }
+  return bodyPayload;
+}
+
+function extractUpstreamError(response: Response, rawText: string, resolvedAlias: QuickImageAlias) {
+  const idsFromBody = extractIdsFromRawText(rawText);
+  const traceId = idsFromBody.traceId || response.headers.get("x-trace-id") || response.headers.get("trace-id") || undefined;
+  const requestId =
+    idsFromBody.requestId ||
+    response.headers.get("x-request-id") ||
+    response.headers.get("request-id") ||
+    response.headers.get("x-req-id") ||
+    undefined;
+  const logId =
+    idsFromBody.logId ||
+    response.headers.get("x-tt-logid") ||
+    response.headers.get("x-log-id") ||
+    response.headers.get("log-id") ||
+    undefined;
+  return new ImageGenerationUpstreamError({
+    message: `图像生成失败: ${response.status} ${rawText}`,
+    status: response.status,
+    alias: resolvedAlias,
+    rawText,
+    traceId,
+    requestId,
+    logId
+  });
+}
+
+function parseImageResult(rawText: string): string {
+  const parsed = JSON.parse(rawText) as {
+    data?: Array<{ url?: string; image_url?: string; b64_json?: string }>;
+  };
+  const first = parsed.data?.[0];
+  const urlFromOpenAI = typeof first?.url === "string" ? first.url.trim() : "";
+  const urlFromAceData = typeof first?.image_url === "string" ? first.image_url.trim() : "";
+  const url = urlFromOpenAI || urlFromAceData;
+  const b64 = typeof first?.b64_json === "string" ? first.b64_json.trim() : "";
+
+  if (url) return url;
+  if (b64) return toDataUrl(b64);
+  throw new Error("图像生成失败：未返回可用图片数据。");
+}
+
+async function doImageRequest(
+  requestUrl: string,
+  apiKey: string,
+  bodyPayload: Record<string, unknown>,
+  resolvedAlias: QuickImageAlias,
+  timeoutMs: number
+): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(requestUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(bodyPayload),
+      signal: controller.signal
+    });
+    const rawText = await response.text();
+    if (!response.ok) {
+      throw extractUpstreamError(response, rawText, resolvedAlias);
+    }
+    return parseImageResult(rawText);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function generateQuickPreviewImage(input: GenerateQuickPreviewImageInput) {
   const defaultAlias =
     process.env.AI_IMAGE_DEFAULT_ALIAS === "nano_banner" || process.env.AI_IMAGE_DEFAULT_ALIAS === "nano_banana"
@@ -184,83 +283,26 @@ export async function generateQuickPreviewImage(input: GenerateQuickPreviewImage
     throw new Error("缺少图像生成配置，请检查对应模型别名的 AI_IMAGE_* 配置。");
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const prompt = `${buildImagePromptFromSummary(input)}${
+    input.regenerateToken ? `\n构图变化标识：${input.regenerateToken}` : ""
+  }`;
+
+  const hasRef = isHttpUrl(input.referenceImage);
+  const bodyPayload = buildRequestBody(resolvedAlias, imageModel, imageSize, prompt, input.referenceImage);
 
   try {
-    const prompt = `${buildImagePromptFromSummary(input)}${
-      input.regenerateToken ? `\n构图变化标识：${input.regenerateToken}` : ""
-    }`;
-    const bodyPayload: Record<string, unknown> = {
-      model: imageModel,
-      prompt,
-      size: imageSize,
-      response_format: "url"
-    };
-    if (resolvedAlias === "nano_banana" || resolvedAlias === "nano_banner") {
-      bodyPayload.sequential_image_generation = "disabled";
-      bodyPayload.stream = false;
-      bodyPayload.watermark = true;
-      if (isHttpUrl(input.referenceImage)) {
-        bodyPayload.reference_image_url = input.referenceImage;
-      }
-    } else if (resolvedAlias === "default" && isHttpUrl(input.referenceImage)) {
-      bodyPayload.image = input.referenceImage;
-      bodyPayload.sequential_image_generation = "disabled";
-      bodyPayload.stream = false;
-      bodyPayload.watermark = true;
+    return await doImageRequest(requestUrl, apiKey, bodyPayload, resolvedAlias, timeoutMs);
+  } catch (firstError) {
+    if (hasRef && resolvedAlias === "default") {
+      console.warn(
+        `[ai-quick-image] default model with reference image failed, retrying without reference image. error=${
+          firstError instanceof Error ? firstError.message : String(firstError)
+        }`
+      );
+      const fallbackBody = buildRequestBody(resolvedAlias, imageModel, imageSize, prompt, undefined);
+      return await doImageRequest(requestUrl, apiKey, fallbackBody, resolvedAlias, timeoutMs);
     }
-    const response = await fetch(requestUrl, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${apiKey}`
-      },
-      body: JSON.stringify(bodyPayload),
-      signal: controller.signal
-    });
-
-    const rawText = await response.text();
-    if (!response.ok) {
-      const idsFromBody = extractIdsFromRawText(rawText);
-      const traceId = idsFromBody.traceId || response.headers.get("x-trace-id") || response.headers.get("trace-id") || undefined;
-      const requestId =
-        idsFromBody.requestId ||
-        response.headers.get("x-request-id") ||
-        response.headers.get("request-id") ||
-        response.headers.get("x-req-id") ||
-        undefined;
-      const logId =
-        idsFromBody.logId ||
-        response.headers.get("x-tt-logid") ||
-        response.headers.get("x-log-id") ||
-        response.headers.get("log-id") ||
-        undefined;
-      throw new ImageGenerationUpstreamError({
-        message: `图像生成失败: ${response.status} ${rawText}`,
-        status: response.status,
-        alias: resolvedAlias,
-        rawText,
-        traceId,
-        requestId,
-        logId
-      });
-    }
-
-    const parsed = JSON.parse(rawText) as {
-      data?: Array<{ url?: string; image_url?: string; b64_json?: string }>;
-    };
-    const first = parsed.data?.[0];
-    const urlFromOpenAI = typeof first?.url === "string" ? first.url.trim() : "";
-    const urlFromAceData = typeof first?.image_url === "string" ? first.image_url.trim() : "";
-    const url = urlFromOpenAI || urlFromAceData;
-    const b64 = typeof first?.b64_json === "string" ? first.b64_json.trim() : "";
-
-    if (url) return url;
-    if (b64) return toDataUrl(b64);
-    throw new Error("图像生成失败：未返回可用图片数据。");
-  } finally {
-    clearTimeout(timeout);
+    throw firstError;
   }
 }
 

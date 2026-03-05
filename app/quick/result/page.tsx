@@ -453,7 +453,7 @@ export default function QuickEntryResultPage() {
             }
           | null;
         if (!response.ok || !data?.previewImageUrl) {
-          const apiError = new Error(data?.error ?? "预览图生成失败，请稍后重试。") as Error & { retryable?: boolean };
+          const apiError = new Error(data?.error ?? "AI 画手暂时走神了，稍后去项目列表查看，我们一定会帮你生成出来。") as Error & { retryable?: boolean };
           apiError.retryable = Boolean(data?.retryable);
           throw apiError;
         }
@@ -467,12 +467,12 @@ export default function QuickEntryResultPage() {
         setReferenceImageWasDropped(Boolean(data.referenceImageDropped));
         const messageParts: string[] = [];
         if (data.referenceImageDropped) {
-          messageParts.push("当前通道繁忙已切换备用模型，参考图暂未生效，可点击下方按钮重试。");
+          messageParts.push("人太多换了一位 AI 画手，参考图暂未用上，可点下方按钮再画一次。");
         } else if (data.usedReferenceImage) {
-          messageParts.push("已使用参考图引导生成。");
+          messageParts.push("已参考你的图片来画的哦。");
         }
         if (!data.referenceImageDropped && data.usedFallbackToDefault) {
-          messageParts.push("当前通道繁忙，已自动切换备用模型。");
+          messageParts.push("排队的人有点多，换了一位 AI 画手帮你完成。");
         }
         setImageInfoHint(messageParts.join(" "));
         if (quickProjectId) {
@@ -500,7 +500,7 @@ export default function QuickEntryResultPage() {
             ? error.message
             : typeof error === "object" && error !== null && "message" in error
               ? String((error as { message: unknown }).message)
-              : "预览图生成失败，请稍后重试。";
+              : "AI 画手暂时走神了，稍后去项目列表查看，我们一定会帮你生成出来。";
         const retryable = Boolean(
           error instanceof Error &&
             "retryable" in error &&
@@ -512,7 +512,7 @@ export default function QuickEntryResultPage() {
           const retryRound = imageRetryCountRef.current;
           setImageState("generating");
           setImageMessage("");
-          setImageInfoHint(`通道繁忙，正在自动重试第 ${retryRound} 次...`);
+          setImageInfoHint(`设计的人有点多，AI 画手正在第 ${retryRound} 次排队中...`);
           clearImageRetryTimer();
           imageRetryTimerRef.current = window.setTimeout(() => {
             void requestImageResult(targetInput, { preserveProgress: true });
@@ -733,7 +733,7 @@ export default function QuickEntryResultPage() {
                 }}
                 className="mx-auto mt-2 block rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-xs text-amber-700 hover:bg-amber-100"
               >
-                重新生成（尝试使用参考图）
+                让 AI 画手参考你的图再画一次
               </button>
             )}
             {lightboxOpen && (
@@ -803,9 +803,8 @@ export default function QuickEntryResultPage() {
             )}
           </>
         ) : imageFromDbMissing ? (
-          <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
-            <p>这个项目目前还没有预览图。</p>
-            <p className="mt-1 text-xs text-slate-500">你可以现在补一张，方便后续回看与对比。</p>
+          <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+            <p>AI 画手还没来得及画这张图，现在帮你补上？</p>
             <button
               type="button"
               onClick={() => {
@@ -813,9 +812,9 @@ export default function QuickEntryResultPage() {
                   void requestImageResult(effectiveInput, { manual: true });
                 }
               }}
-              className="mt-2 rounded-md border border-slate-300 bg-white px-3 py-1 text-xs text-slate-700 hover:bg-slate-100"
+              className="mt-2 rounded-md border border-blue-300 bg-white px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
             >
-              生成预览图
+              让 AI 画手画一张
             </button>
           </div>
         ) : (
@@ -830,7 +829,14 @@ export default function QuickEntryResultPage() {
             )}
             {imageShowRetryInline ? (
               <>
-                <p>{imageMessage || "预览图生成未成功"}</p>
+                <p>{imageMessage || "AI 画手暂时没画出来，别担心"}</p>
+                <p className="mt-1 text-xs text-blue-700">
+                  你也可以稍后去
+                  <Link href="/projects" className="mx-0.5 underline underline-offset-2 hover:text-blue-800">
+                    项目列表
+                  </Link>
+                  查看，我们会在后台帮你画好的。
+                </p>
                 <button
                   type="button"
                   onClick={() => {
@@ -840,18 +846,18 @@ export default function QuickEntryResultPage() {
                   }}
                   className="mt-2 rounded-md border border-blue-300 bg-white px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
                 >
-                  重新生成预览图
+                  让 AI 画手再画一次
                 </button>
               </>
             ) : (
               <>
-                <p>创意图片生成中，请耐心等待</p>
+                <p>AI 画手正在为你的创意作画</p>
                 {imageInfoHint && <p className="mt-1 text-xs text-blue-700">{imageInfoHint}</p>}
                 <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
                   <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
                 </div>
                 <div className="mt-2 flex items-center justify-between text-xs text-blue-700">
-                  <span>已完成约 {imageProgress}%</span>
+                  <span>已完成约 {imageProgress}%，可以先看下方文字结果</span>
                   {showLongWaitGuidance && (
                     <Link href="/projects" className="underline underline-offset-2 hover:text-blue-800">
                       稍后去项目列表查看
