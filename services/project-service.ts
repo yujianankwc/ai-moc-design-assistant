@@ -15,6 +15,17 @@ export const SYSTEM_FALLBACK_MARKER = "__SYSTEM_FALLBACK__:";
 export const RULE_DEDUCTION_MARKER = "__RULE_DEDUCTIONS__:";
 export const QUICK_PROJECT_DATA_MARKER = "__QUICK_PROJECT_DATA__:";
 
+export function quickProjectHasImage(notesForFactory: string | null | undefined): boolean {
+  if (!notesForFactory || !notesForFactory.startsWith(QUICK_PROJECT_DATA_MARKER)) return false;
+  try {
+    const json = notesForFactory.slice(QUICK_PROJECT_DATA_MARKER.length);
+    const parsed = JSON.parse(json) as { previewImageUrl?: string | null };
+    return Boolean(parsed?.previewImageUrl);
+  } catch {
+    return false;
+  }
+}
+
 type QuickProjectData = {
   input: QuickEntryInput;
   result: QuickEntryResult;
@@ -388,7 +399,7 @@ export async function listProjectsByDemoUser() {
 
   const { data, error } = await supabase
     .from("projects")
-    .select("id,user_id,title,status,updated_at,category")
+    .select("id,user_id,title,status,updated_at,category,notes_for_factory")
     .eq("user_id", demoUser.id)
     .order("updated_at", { ascending: false });
 
@@ -416,7 +427,7 @@ export async function createQuickProjectForDemoUser(input: {
     result: input.quickResult,
     textWarning: input.textWarning ?? "",
     previewImageUrl: null,
-    imageWarning: input.textWarning ?? ""
+    imageWarning: ""
   };
 
   const { data, error } = await supabase

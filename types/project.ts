@@ -25,6 +25,7 @@ export type ProjectRow = {
   category?: string | null;
   status: ProjectStatus;
   updated_at: string;
+  notes_for_factory?: string | null;
 };
 
 export type ProjectDetailRow = {

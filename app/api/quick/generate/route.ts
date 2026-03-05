@@ -30,6 +30,7 @@ type QuickImageAlias = "default" | "nano_banner" | "nano_banana";
 
 const BACKFILL_FALLBACK_MAX_RETRIES = 3;
 const BACKFILL_FALLBACK_RETRY_DELAY_MS = 3000;
+const BACKFILL_INITIAL_DELAY_MS = 15_000;
 
 function sanitizeInput(body: QuickGenerateBody): QuickEntryInput | null {
   const idea = typeof body.idea === "string" ? body.idea.trim() : "";
@@ -136,6 +137,16 @@ function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+async function projectAlreadyHasImage(projectId: string): Promise<boolean> {
+  try {
+    const { getQuickProjectByIdForDemoUser } = await import("@/services/project-service");
+    const project = await getQuickProjectByIdForDemoUser(projectId);
+    return Boolean(project?.previewImageUrl);
+  } catch {
+    return false;
+  }
+}
+
 async function generateAndPersistQuickImageInBackground(input: {
   projectId: string;
   quickInput: QuickEntryInput;
@@ -143,6 +154,10 @@ async function generateAndPersistQuickImageInBackground(input: {
   knowledge: ReturnType<typeof buildQuickKnowledgePack>;
   regenerateToken: string;
 }) {
+  await sleep(BACKFILL_INITIAL_DELAY_MS);
+
+  if (await projectAlreadyHasImage(input.projectId)) return;
+
   const alias = resolveDefaultImageAlias();
   const imageMode = decideQuickImageMode(input.summary);
   try {
@@ -188,6 +203,8 @@ async function generateAndPersistQuickImageInBackground(input: {
     }
 
     if (!previewImageUrl) return;
+    if (await projectAlreadyHasImage(input.projectId)) return;
+
     await updateQuickProjectImageForDemoUser({
       projectId: input.projectId,
       idea: input.quickInput.idea,
@@ -195,6 +212,8 @@ async function generateAndPersistQuickImageInBackground(input: {
       imageWarning: ""
     });
   } catch (error) {
+    if (await projectAlreadyHasImage(input.projectId)) return;
+
     const rawError = error instanceof Error ? error.message : String(error || "");
     await updateQuickProjectImageForDemoUser({
       projectId: input.projectId,

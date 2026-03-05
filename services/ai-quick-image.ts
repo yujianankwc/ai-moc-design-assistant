@@ -16,6 +16,44 @@ type GenerateQuickPreviewImageInput = {
 
 type QuickImageAlias = "default" | "nano_banner" | "nano_banana";
 
+type UpstreamIds = {
+  traceId?: string;
+  requestId?: string;
+  logId?: string;
+};
+
+export class ImageGenerationUpstreamError extends Error {
+  status: number;
+  alias: QuickImageAlias;
+  rawText: string;
+  traceId?: string;
+  requestId?: string;
+  logId?: string;
+
+  constructor(input: {
+    message: string;
+    status: number;
+    alias: QuickImageAlias;
+    rawText: string;
+    traceId?: string;
+    requestId?: string;
+    logId?: string;
+  }) {
+    super(input.message);
+    this.name = "ImageGenerationUpstreamError";
+    this.status = input.status;
+    this.alias = input.alias;
+    this.rawText = input.rawText;
+    this.traceId = input.traceId;
+    this.requestId = input.requestId;
+    this.logId = input.logId;
+  }
+}
+
+export function isImageGenerationUpstreamError(error: unknown): error is ImageGenerationUpstreamError {
+  return error instanceof ImageGenerationUpstreamError;
+}
+
 function toDataUrl(base64: string) {
   return `data:image/png;base64,${base64}`;
 }
@@ -92,6 +130,45 @@ function parseTimeoutMs(alias: QuickImageAlias) {
   return Math.min(parsed, 300000);
 }
 
+function pickNestedId(value: unknown, keys: string[]) {
+  const queue: unknown[] = [value];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object") continue;
+    const record = current as Record<string, unknown>;
+    for (const [rawKey, rawValue] of Object.entries(record)) {
+      const normalized = rawKey.toLowerCase().replace(/[-\s]/g, "_");
+      if (keys.includes(normalized) && typeof rawValue === "string" && rawValue.trim()) {
+        return rawValue.trim();
+      }
+      if (rawValue && typeof rawValue === "object") {
+        queue.push(rawValue);
+      }
+    }
+  }
+  return "";
+}
+
+function extractIdsFromRawText(rawText: string): UpstreamIds {
+  const result: UpstreamIds = {};
+  try {
+    const parsed = JSON.parse(rawText) as unknown;
+    result.traceId = pickNestedId(parsed, ["trace_id", "traceid"]) || undefined;
+    result.requestId = pickNestedId(parsed, ["request_id", "requestid", "req_id"]) || undefined;
+    result.logId = pickNestedId(parsed, ["log_id", "logid"]) || undefined;
+    return result;
+  } catch {
+    const traceMatch = rawText.match(/"trace[_-]?id"\s*:\s*"([^"]+)"/i);
+    const requestMatch = rawText.match(/"(request[_-]?id|req[_-]?id)"\s*:\s*"([^"]+)"/i);
+    const logMatch = rawText.match(/"log[_-]?id"\s*:\s*"([^"]+)"/i);
+    return {
+      traceId: traceMatch?.[1],
+      requestId: requestMatch?.[2],
+      logId: logMatch?.[1]
+    };
+  }
+}
+
 export async function generateQuickPreviewImage(input: GenerateQuickPreviewImageInput) {
   const defaultAlias =
     process.env.AI_IMAGE_DEFAULT_ALIAS === "nano_banner" || process.env.AI_IMAGE_DEFAULT_ALIAS === "nano_banana"
@@ -120,14 +197,18 @@ export async function generateQuickPreviewImage(input: GenerateQuickPreviewImage
       size: imageSize,
       response_format: "url"
     };
-    // Nano endpoint accepts additional generation controls.
     if (resolvedAlias === "nano_banana" || resolvedAlias === "nano_banner") {
       bodyPayload.sequential_image_generation = "disabled";
       bodyPayload.stream = false;
       bodyPayload.watermark = true;
-    }
-    if ((resolvedAlias === "nano_banana" || resolvedAlias === "nano_banner") && isHttpUrl(input.referenceImage)) {
-      bodyPayload.reference_image_url = input.referenceImage;
+      if (isHttpUrl(input.referenceImage)) {
+        bodyPayload.reference_image_url = input.referenceImage;
+      }
+    } else if (resolvedAlias === "default" && isHttpUrl(input.referenceImage)) {
+      bodyPayload.image = input.referenceImage;
+      bodyPayload.sequential_image_generation = "disabled";
+      bodyPayload.stream = false;
+      bodyPayload.watermark = true;
     }
     const response = await fetch(requestUrl, {
       method: "POST",
@@ -141,7 +222,29 @@ export async function generateQuickPreviewImage(input: GenerateQuickPreviewImage
 
     const rawText = await response.text();
     if (!response.ok) {
-      throw new Error(`图像生成失败: ${response.status} ${rawText}`);
+      const idsFromBody = extractIdsFromRawText(rawText);
+      const traceId = idsFromBody.traceId || response.headers.get("x-trace-id") || response.headers.get("trace-id") || undefined;
+      const requestId =
+        idsFromBody.requestId ||
+        response.headers.get("x-request-id") ||
+        response.headers.get("request-id") ||
+        response.headers.get("x-req-id") ||
+        undefined;
+      const logId =
+        idsFromBody.logId ||
+        response.headers.get("x-tt-logid") ||
+        response.headers.get("x-log-id") ||
+        response.headers.get("log-id") ||
+        undefined;
+      throw new ImageGenerationUpstreamError({
+        message: `图像生成失败: ${response.status} ${rawText}`,
+        status: response.status,
+        alias: resolvedAlias,
+        rawText,
+        traceId,
+        requestId,
+        logId
+      });
     }
 
     const parsed = JSON.parse(rawText) as {

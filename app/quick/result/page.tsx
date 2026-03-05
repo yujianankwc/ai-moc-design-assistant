@@ -152,6 +152,7 @@ export default function QuickEntryResultPage() {
   const [imageProgress, setImageProgress] = useState(8);
   const [imageElapsedSeconds, setImageElapsedSeconds] = useState(0);
   const [hasTriedImageGeneration, setHasTriedImageGeneration] = useState(false);
+  const [referenceImageWasDropped, setReferenceImageWasDropped] = useState(false);
   const autoRequestedKeyRef = useRef("");
   const imageAutoRequestedKeyRef = useRef("");
   const imageRequestSeqRef = useRef(0);
@@ -446,6 +447,7 @@ export default function QuickEntryResultPage() {
               previewImageUrl?: string | null;
               usedFallbackToDefault?: boolean;
               usedReferenceImage?: boolean;
+              referenceImageDropped?: boolean;
               error?: string;
               retryable?: boolean;
             }
@@ -462,11 +464,14 @@ export default function QuickEntryResultPage() {
         setImageState("idle");
         setImageProgress(100);
         setImageMessage("");
+        setReferenceImageWasDropped(Boolean(data.referenceImageDropped));
         const messageParts: string[] = [];
-        if (data.usedReferenceImage) {
+        if (data.referenceImageDropped) {
+          messageParts.push("当前通道繁忙已切换备用模型，参考图暂未生效，可点击下方按钮重试。");
+        } else if (data.usedReferenceImage) {
           messageParts.push("已使用参考图引导生成。");
         }
-        if (data.usedFallbackToDefault) {
+        if (!data.referenceImageDropped && data.usedFallbackToDefault) {
           messageParts.push("当前通道繁忙，已自动切换备用模型。");
         }
         setImageInfoHint(messageParts.join(" "));
@@ -629,13 +634,12 @@ export default function QuickEntryResultPage() {
   const imageWaitSeconds = parsePublicSeconds(process.env.NEXT_PUBLIC_IMAGE_WAIT_SECONDS, 30);
   const imageRetrySeconds = parsePublicSeconds(process.env.NEXT_PUBLIC_IMAGE_RETRY_SECONDS, 90);
   const normalizedRetrySeconds = Math.max(imageRetrySeconds, imageWaitSeconds + 1);
-  const imageInitialCountdown = Math.max(0, imageWaitSeconds - imageElapsedSeconds);
   const imageFullTimeout = imageElapsedSeconds >= normalizedRetrySeconds;
   const showLongWaitGuidance = imageElapsedSeconds >= imageWaitSeconds && !imageFullTimeout;
   const imageShowRetryInline =
     hasTriedImageGeneration &&
     !imageUrl &&
-    (imageState === "failed" || imageFullTimeout);
+    imageState === "failed";
   const imageFromDbMissing = !imageUrl && !hasTriedImageGeneration && Boolean(dbResult) && !dbLoading;
   const displayTopJudgement = clampText(
     resolvedResult?.topJudgement || fallbackResult?.topJudgement || "正在生成中，请稍候...",
@@ -717,6 +721,21 @@ export default function QuickEntryResultPage() {
             />
             <p className="mt-1 text-center text-xs text-slate-400">点击图片可查看大图，长按可保存</p>
             {imageInfoHint && <p className="mt-1 text-center text-xs text-amber-600">{imageInfoHint}</p>}
+            {referenceImageWasDropped && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (effectiveInput) {
+                    setReferenceImageWasDropped(false);
+                    setImageUrl(null);
+                    void requestImageResult(effectiveInput, { manual: true });
+                  }
+                }}
+                className="mx-auto mt-2 block rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-xs text-amber-700 hover:bg-amber-100"
+              >
+                重新生成（尝试使用参考图）
+              </button>
+            )}
             {lightboxOpen && (
               <div
                 className="fixed inset-0 z-50 bg-black/90"
@@ -801,50 +820,45 @@ export default function QuickEntryResultPage() {
           </div>
         ) : (
           <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-            <div className="mb-2 flex items-center gap-1">
-              <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.2s]" />
-              <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.1s]" />
-              <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500" />
-              <span className="ml-1 inline-block h-2.5 w-2.5 animate-spin rounded-sm border-2 border-blue-400 border-t-transparent" />
-            </div>
-            <p>正在帮你整理这个创意</p>
-            <p className="mt-1 text-xs text-blue-700">{imageInfoHint || "先给你方向，再把画面补出来。"}</p>
-            <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
-              <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
-            </div>
-            <p className="mt-2 text-xs text-blue-700">已完成约 {imageProgress}%</p>
-            {imageInitialCountdown > 0 ? (
-              <p className="mt-1 text-xs text-blue-700">预计还需约 {imageInitialCountdown} 秒</p>
-            ) : (
-              <p className="mt-1 text-xs text-blue-700">画面还在生成中，你可以先看下方文字结果。</p>
-            )}
-            {showLongWaitGuidance && (
-              <div className="mt-1 text-xs text-blue-700">
-                <span>也可以稍后回来查看，生成完成后会自动展示在项目里。</span>
-                <Link href="/projects" className="ml-2 underline underline-offset-2 hover:text-blue-800">
-                  去项目列表稍后查看
-                </Link>
+            {!imageShowRetryInline && (
+              <div className="mb-2 flex items-center gap-1">
+                <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.2s]" />
+                <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.1s]" />
+                <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500" />
+                <span className="ml-1 inline-block h-2.5 w-2.5 animate-spin rounded-sm border-2 border-blue-400 border-t-transparent" />
               </div>
             )}
-            {imageShowRetryInline && (
-              <p className="mt-1 text-xs text-blue-700">
-                {imageState === "failed" && imageMessage
-                  ? `${imageMessage} 你可以点击下方按钮重试。`
-                  : "生成时间较长，你可以点击下方按钮重试，或稍后从项目列表查看。"}
-              </p>
-            )}
-            {imageShowRetryInline && (
-              <button
-                type="button"
-                onClick={() => {
-                  if (effectiveInput) {
-                    void requestImageResult(effectiveInput, { manual: true });
-                  }
-                }}
-                className="mt-2 rounded-md border border-blue-300 bg-white px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
-              >
-                重新生成预览图
-              </button>
+            {imageShowRetryInline ? (
+              <>
+                <p>{imageMessage || "预览图生成未成功"}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (effectiveInput) {
+                      void requestImageResult(effectiveInput, { manual: true });
+                    }
+                  }}
+                  className="mt-2 rounded-md border border-blue-300 bg-white px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
+                >
+                  重新生成预览图
+                </button>
+              </>
+            ) : (
+              <>
+                <p>创意图片生成中，请耐心等待</p>
+                {imageInfoHint && <p className="mt-1 text-xs text-blue-700">{imageInfoHint}</p>}
+                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
+                  <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
+                </div>
+                <div className="mt-2 flex items-center justify-between text-xs text-blue-700">
+                  <span>已完成约 {imageProgress}%</span>
+                  {showLongWaitGuidance && (
+                    <Link href="/projects" className="underline underline-offset-2 hover:text-blue-800">
+                      稍后去项目列表查看
+                    </Link>
+                  )}
+                </div>
+              </>
             )}
           </div>
         )}

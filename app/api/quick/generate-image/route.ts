@@ -4,7 +4,7 @@ import {
   buildQuickKnowledgePack,
   decideQuickImageMode
 } from "@/lib/quick-generation-pipeline";
-import { generateQuickPreviewImage } from "@/services/ai-quick-image";
+import { generateQuickPreviewImage, isImageGenerationUpstreamError } from "@/services/ai-quick-image";
 import type { QuickDirection, QuickEntryInput, QuickScalePreference, QuickStyle } from "@/types/quick-entry";
 
 type QuickGenerateImageBody = {
@@ -31,6 +31,8 @@ type ImageErrorType =
 
 const FALLBACK_MAX_RETRIES = 3;
 const FALLBACK_RETRY_DELAY_MS = 3000;
+const PRIMARY_RETRY_WITH_REF_IMAGE = 2;
+const PRIMARY_RETRY_DELAY_MS = 4000;
 
 function sanitizeInput(body: QuickGenerateImageBody): QuickEntryInput | null {
   const idea = typeof body.idea === "string" ? body.idea.trim() : "";
@@ -116,6 +118,9 @@ function logImageGenerationEvent(input: {
   usedReferenceImage: boolean;
   elapsedMs: number;
   ideaLength: number;
+  upstreamTraceId?: string;
+  upstreamRequestId?: string;
+  upstreamLogId?: string;
 }) {
   const payload = {
     tag: "quick_image_generation",
@@ -126,6 +131,29 @@ function logImageGenerationEvent(input: {
     return;
   }
   console.warn(JSON.stringify(payload));
+}
+
+function extractUpstreamIds(error: unknown): {
+  upstreamTraceId?: string;
+  upstreamRequestId?: string;
+  upstreamLogId?: string;
+} {
+  if (isImageGenerationUpstreamError(error)) {
+    return {
+      upstreamTraceId: error.traceId,
+      upstreamRequestId: error.requestId,
+      upstreamLogId: error.logId
+    };
+  }
+  const raw = error instanceof Error ? error.message : String(error || "");
+  const traceMatch = raw.match(/"trace[_-]?id"\s*:\s*"([^"]+)"/i);
+  const requestMatch = raw.match(/"(request[_-]?id|req[_-]?id)"\s*:\s*"([^"]+)"/i);
+  const logMatch = raw.match(/"log[_-]?id"\s*:\s*"([^"]+)"/i);
+  return {
+    upstreamTraceId: traceMatch?.[1],
+    upstreamRequestId: requestMatch?.[2],
+    upstreamLogId: logMatch?.[1]
+  };
 }
 
 function resolveAliasFromBody(body: QuickGenerateImageBody): QuickImageAlias {
@@ -194,66 +222,87 @@ export async function POST(request: Request) {
     ideaLengthForLog = ideaLength;
     let previewImageUrl = "";
     let usedFallbackToDefault = false;
-    try {
-      previewImageUrl = await generateQuickPreviewImage({
-        summary,
-        knowledge,
-        imageMode,
-        referenceImage: input.referenceImage,
-        regenerateToken: typeof body.regenerateToken === "string" ? body.regenerateToken : "",
-        imageModelAlias: requestedAlias
-      });
-    } catch (error) {
-      const rawError = error instanceof Error ? error.message : String(error || "");
-      logImageGenerationEvent({
-        phase: "primary_failed",
-        alias: requestedAlias,
-        errorType: classifyImageError(error),
-        usedFallbackToDefault: false,
-        usedReferenceImage,
-        elapsedMs: Date.now() - startedAt,
-        ideaLength
-      });
-      if (shouldFallbackToDefault(rawError, requestedAlias)) {
-        usedFallbackToDefault = true;
-        usedFallbackForLog = true;
-        let fallbackLastRaw = "";
-        for (let attempt = 1; attempt <= FALLBACK_MAX_RETRIES; attempt += 1) {
-          try {
-            previewImageUrl = await generateQuickPreviewImage({
-              summary,
-              knowledge,
-              imageMode,
-              referenceImage: input.referenceImage,
-              regenerateToken: typeof body.regenerateToken === "string" ? body.regenerateToken : "",
-              imageModelAlias: "default"
-            });
-            break;
-          } catch (fallbackError) {
-            const fallbackRaw = fallbackError instanceof Error ? fallbackError.message : String(fallbackError || "");
-            const fallbackErrorType = classifyImageError(fallbackError);
-            fallbackLastRaw = fallbackRaw;
-            logImageGenerationEvent({
-              phase: "fallback_failed",
-              alias: requestedAlias,
-              errorType: fallbackErrorType,
-              usedFallbackToDefault: true,
-              usedReferenceImage,
-              elapsedMs: Date.now() - startedAt,
-              ideaLength
-            });
-            const shouldRetry = attempt < FALLBACK_MAX_RETRIES && isRetriableImageErrorType(fallbackErrorType);
-            if (!shouldRetry) {
-              throw new Error(`fallback_exhausted; primary=${rawError}; fallback=${fallbackRaw}`);
-            }
-            await sleep(FALLBACK_RETRY_DELAY_MS);
+    let referenceImageDropped = false;
+    const regenToken = typeof body.regenerateToken === "string" ? body.regenerateToken : "";
+
+    const primaryMaxAttempts = usedReferenceImage && requestedAlias !== "default"
+      ? 1 + PRIMARY_RETRY_WITH_REF_IMAGE
+      : 1;
+
+    let primaryLastRaw = "";
+    for (let attempt = 1; attempt <= primaryMaxAttempts; attempt += 1) {
+      try {
+        previewImageUrl = await generateQuickPreviewImage({
+          summary,
+          knowledge,
+          imageMode,
+          referenceImage: input.referenceImage,
+          regenerateToken: regenToken,
+          imageModelAlias: requestedAlias
+        });
+        break;
+      } catch (error) {
+        primaryLastRaw = error instanceof Error ? error.message : String(error || "");
+        const upstreamIds = extractUpstreamIds(error);
+        logImageGenerationEvent({
+          phase: "primary_failed",
+          alias: requestedAlias,
+          errorType: classifyImageError(error),
+          usedFallbackToDefault: false,
+          usedReferenceImage,
+          elapsedMs: Date.now() - startedAt,
+          ideaLength,
+          ...upstreamIds
+        });
+        if (attempt < primaryMaxAttempts && isRetriableImageErrorType(classifyImageError(error))) {
+          await sleep(PRIMARY_RETRY_DELAY_MS);
+          continue;
+        }
+        if (!shouldFallbackToDefault(primaryLastRaw, requestedAlias)) {
+          throw error;
+        }
+      }
+    }
+
+    if (!previewImageUrl) {
+      usedFallbackToDefault = true;
+      usedFallbackForLog = true;
+      let fallbackLastRaw = "";
+      for (let attempt = 1; attempt <= FALLBACK_MAX_RETRIES; attempt += 1) {
+        try {
+          previewImageUrl = await generateQuickPreviewImage({
+            summary,
+            knowledge,
+            imageMode,
+            referenceImage: input.referenceImage,
+            regenerateToken: regenToken,
+            imageModelAlias: "default"
+          });
+          break;
+        } catch (fallbackError) {
+          const fallbackRaw = fallbackError instanceof Error ? fallbackError.message : String(fallbackError || "");
+          const fallbackErrorType = classifyImageError(fallbackError);
+          const upstreamIds = extractUpstreamIds(fallbackError);
+          fallbackLastRaw = fallbackRaw;
+          logImageGenerationEvent({
+            phase: "fallback_failed",
+            alias: requestedAlias,
+            errorType: fallbackErrorType,
+            usedFallbackToDefault: true,
+            usedReferenceImage,
+            elapsedMs: Date.now() - startedAt,
+            ideaLength,
+            ...upstreamIds
+          });
+          const shouldRetry = attempt < FALLBACK_MAX_RETRIES && isRetriableImageErrorType(fallbackErrorType);
+          if (!shouldRetry) {
+            throw new Error(`fallback_exhausted; primary=${primaryLastRaw}; fallback=${fallbackRaw}`);
           }
+          await sleep(FALLBACK_RETRY_DELAY_MS);
         }
-        if (!previewImageUrl) {
-          throw new Error(`fallback_exhausted; primary=${rawError}; fallback=${fallbackLastRaw || rawError}`);
-        }
-      } else {
-        throw error;
+      }
+      if (!previewImageUrl) {
+        throw new Error(`fallback_exhausted; primary=${primaryLastRaw}; fallback=${fallbackLastRaw || primaryLastRaw}`);
       }
     }
 
@@ -269,11 +318,13 @@ export async function POST(request: Request) {
     return NextResponse.json({
       previewImageUrl,
       usedFallbackToDefault,
-      usedReferenceImage
+      usedReferenceImage,
+      referenceImageDropped
     });
   } catch (error) {
     const errorType = classifyImageError(error);
     const retryable = isRetriableImageErrorType(errorType);
+    const upstreamIds = extractUpstreamIds(error);
     logImageGenerationEvent({
       phase: "request_failed",
       alias: aliasForLog,
@@ -281,7 +332,8 @@ export async function POST(request: Request) {
       usedFallbackToDefault: usedFallbackForLog,
       usedReferenceImage: usedReferenceImageForLog,
       elapsedMs: Date.now() - startedAt,
-      ideaLength: ideaLengthForLog
+      ideaLength: ideaLengthForLog,
+      ...upstreamIds
     });
     return NextResponse.json(
       {

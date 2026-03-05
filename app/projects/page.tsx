@@ -1,7 +1,7 @@
 import Link from "next/link";
 import LogoutButton from "@/components/logout-button";
 import { mapProjectStatus } from "@/lib/display-mappers";
-import { listProjectsByDemoUser } from "@/services/project-service";
+import { listProjectsByDemoUser, quickProjectHasImage } from "@/services/project-service";
 import type { ProjectRow } from "@/types/project";
 
 export const dynamic = "force-dynamic";
@@ -100,7 +100,9 @@ export default async function ProjectsPage({
           id: item.id,
           name: clampTitle(item.title || "未命名项目"),
           projectType: isQuickProject(item.category) ? "轻量" : "专业",
-          status: isQuickProject(item.category) ? "已生成" : toCompactStatusLabel(formatStatus(item.status)),
+          status: isQuickProject(item.category)
+            ? (quickProjectHasImage(item.notes_for_factory) ? "已生成" : "生成中")
+            : toCompactStatusLabel(formatStatus(item.status)),
           updatedAt: formatDate(item.updated_at),
           viewHref: isQuickProject(item.category) ? `/quick/result?quickProjectId=${item.id}` : `/projects/${item.id}`,
           viewLabel: isQuickProject(item.category) ? "查看结果" : "查看方案"
@@ -177,7 +179,13 @@ export default async function ProjectsPage({
                 >
                   {project.projectType}
                 </span>
-                <span className="rounded-full bg-slate-100 px-2 py-1 text-xs text-slate-600">
+                <span
+                  className={`rounded-full px-2 py-1 text-xs ${
+                    project.status === "生成中"
+                      ? "animate-pulse bg-amber-50 text-amber-700"
+                      : "bg-slate-100 text-slate-600"
+                  }`}
+                >
                   {project.status}
                 </span>
               </div>
