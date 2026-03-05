@@ -218,23 +218,9 @@ export async function POST(request: Request) {
     const summary = buildQuickGenerationSummary(input);
     const knowledge = buildQuickKnowledgePack(summary);
     const imageMode = decideQuickImageMode(summary);
-    let requestedAlias = resolveAliasFromBody(body);
+    const requestedAlias = resolveAliasFromBody(body);
     const usedReferenceImage = hasReferenceImage(input);
     const ideaLength = input.idea.length;
-
-    // When a reference image is present, prefer the default (Doubao Seedream) model
-    // which reliably supports the `image` parameter; nano is unstable with references on production.
-    if (usedReferenceImage && requestedAlias !== "default") {
-      console.log(
-        JSON.stringify({
-          tag: "quick_image_generation",
-          phase: "override_alias_for_ref_image",
-          originalAlias: requestedAlias,
-          overriddenAlias: "default"
-        })
-      );
-      requestedAlias = "default";
-    }
 
     aliasForLog = requestedAlias;
     usedReferenceImageForLog = usedReferenceImage;

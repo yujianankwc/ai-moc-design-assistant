@@ -162,10 +162,6 @@ async function generateAndPersistQuickImageInBackground(input: {
   const imageMode = decideQuickImageMode(input.summary);
   try {
     let previewImageUrl = "";
-    // Background task also prefers default model when reference image is present.
-    const effectiveAlias = input.quickInput.referenceImage?.trim().startsWith("http") && alias !== "default"
-      ? "default"
-      : alias;
     try {
       const result = await generateQuickPreviewImage({
         summary: input.summary,
@@ -173,12 +169,12 @@ async function generateAndPersistQuickImageInBackground(input: {
         imageMode,
         referenceImage: input.quickInput.referenceImage,
         regenerateToken: input.regenerateToken,
-        imageModelAlias: effectiveAlias
+        imageModelAlias: alias
       });
       previewImageUrl = result.url;
     } catch (error) {
       const rawError = error instanceof Error ? error.message : String(error || "");
-      if (!shouldFallbackToDefault(rawError, effectiveAlias)) {
+      if (!shouldFallbackToDefault(rawError, alias)) {
         throw error;
       }
       let fallbackRaw = rawError;
