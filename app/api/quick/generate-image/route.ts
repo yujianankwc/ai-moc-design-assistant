@@ -29,6 +29,9 @@ type ImageErrorType =
   | "api_error"
   | "unknown";
 
+const FALLBACK_MAX_RETRIES = 3;
+const FALLBACK_RETRY_DELAY_MS = 3000;
+
 function sanitizeInput(body: QuickGenerateImageBody): QuickEntryInput | null {
   const idea = typeof body.idea === "string" ? body.idea.trim() : "";
   if (!idea) return null;
@@ -159,6 +162,14 @@ function hasReferenceImage(input: QuickEntryInput) {
   return value.startsWith("http://") || value.startsWith("https://");
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetriableImageErrorType(errorType: ImageErrorType) {
+  return errorType !== "balance_insufficient" && errorType !== "invalid_parameter";
+}
+
 export async function POST(request: Request) {
   const startedAt = Date.now();
   let aliasForLog: QuickImageAlias = "default";
@@ -206,27 +217,40 @@ export async function POST(request: Request) {
       if (shouldFallbackToDefault(rawError, requestedAlias)) {
         usedFallbackToDefault = true;
         usedFallbackForLog = true;
-        try {
-          previewImageUrl = await generateQuickPreviewImage({
-            summary,
-            knowledge,
-            imageMode,
-            referenceImage: input.referenceImage,
-            regenerateToken: typeof body.regenerateToken === "string" ? body.regenerateToken : "",
-            imageModelAlias: "default"
-          });
-        } catch (fallbackError) {
-          const fallbackRaw = fallbackError instanceof Error ? fallbackError.message : String(fallbackError || "");
-          logImageGenerationEvent({
-            phase: "fallback_failed",
-            alias: requestedAlias,
-            errorType: classifyImageError(fallbackError),
-            usedFallbackToDefault: true,
-            usedReferenceImage,
-            elapsedMs: Date.now() - startedAt,
-            ideaLength
-          });
-          throw new Error(`fallback_exhausted; primary=${rawError}; fallback=${fallbackRaw}`);
+        let fallbackLastRaw = "";
+        for (let attempt = 1; attempt <= FALLBACK_MAX_RETRIES; attempt += 1) {
+          try {
+            previewImageUrl = await generateQuickPreviewImage({
+              summary,
+              knowledge,
+              imageMode,
+              referenceImage: input.referenceImage,
+              regenerateToken: typeof body.regenerateToken === "string" ? body.regenerateToken : "",
+              imageModelAlias: "default"
+            });
+            break;
+          } catch (fallbackError) {
+            const fallbackRaw = fallbackError instanceof Error ? fallbackError.message : String(fallbackError || "");
+            const fallbackErrorType = classifyImageError(fallbackError);
+            fallbackLastRaw = fallbackRaw;
+            logImageGenerationEvent({
+              phase: "fallback_failed",
+              alias: requestedAlias,
+              errorType: fallbackErrorType,
+              usedFallbackToDefault: true,
+              usedReferenceImage,
+              elapsedMs: Date.now() - startedAt,
+              ideaLength
+            });
+            const shouldRetry = attempt < FALLBACK_MAX_RETRIES && isRetriableImageErrorType(fallbackErrorType);
+            if (!shouldRetry) {
+              throw new Error(`fallback_exhausted; primary=${rawError}; fallback=${fallbackRaw}`);
+            }
+            await sleep(FALLBACK_RETRY_DELAY_MS);
+          }
+        }
+        if (!previewImageUrl) {
+          throw new Error(`fallback_exhausted; primary=${rawError}; fallback=${fallbackLastRaw || rawError}`);
         }
       } else {
         throw error;
@@ -248,10 +272,12 @@ export async function POST(request: Request) {
       usedReferenceImage
     });
   } catch (error) {
+    const errorType = classifyImageError(error);
+    const retryable = isRetriableImageErrorType(errorType);
     logImageGenerationEvent({
       phase: "request_failed",
       alias: aliasForLog,
-      errorType: classifyImageError(error),
+      errorType,
       usedFallbackToDefault: usedFallbackForLog,
       usedReferenceImage: usedReferenceImageForLog,
       elapsedMs: Date.now() - startedAt,
@@ -259,7 +285,8 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(
       {
-        error: toFriendlyImageError(error)
+        error: toFriendlyImageError(error),
+        retryable
       },
       { status: 500 }
     );

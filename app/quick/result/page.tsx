@@ -48,6 +48,8 @@ function parsePublicSeconds(value: string | undefined, fallbackSeconds: number) 
   return rounded > 0 ? rounded : fallbackSeconds;
 }
 
+const IMAGE_AUTO_RETRY_DELAYS_MS = [5000, 8000, 12000, 15000, 15000] as const;
+
 type QuickCorrectionOption = {
   key: string;
   label: string;
@@ -134,7 +136,7 @@ export default function QuickEntryResultPage() {
   const quickProjectIdFromQuery = searchParams.get("quickProjectId")?.trim() ?? "";
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageState, setImageState] = useState<"idle" | "generating" | "failed">("idle");
-  const [, setImageMessage] = useState("");
+  const [imageMessage, setImageMessage] = useState("");
   const [imageInfoHint, setImageInfoHint] = useState("");
   const [resultState, setResultState] = useState<"idle" | "generating" | "failed">("idle");
   const [quickProjectId, setQuickProjectId] = useState(quickProjectIdFromQuery);
@@ -153,6 +155,8 @@ export default function QuickEntryResultPage() {
   const autoRequestedKeyRef = useRef("");
   const imageAutoRequestedKeyRef = useRef("");
   const imageRequestSeqRef = useRef(0);
+  const imageRetryCountRef = useRef(0);
+  const imageRetryTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setRawSearch(window.location.search);
@@ -286,16 +290,6 @@ export default function QuickEntryResultPage() {
     return null;
   }, [aiSession, input, source]);
 
-  const imageWarning = useMemo(() => {
-    if (source === "ai" && aiSession?.imageWarning) {
-      const sameIdea = aiSession.input.idea.trim() === (input?.idea.trim() ?? "");
-      const sameCorrection =
-        (aiSession.input.correctionIntent || "").trim() === ((input?.correctionIntent || "").trim() ?? "");
-      if (sameIdea && sameCorrection) return aiSession.imageWarning;
-    }
-    return "";
-  }, [aiSession, input, source]);
-
   const references = useMemo(() => (effectiveInput ? pickQuickSimilarReferences(effectiveInput) : []), [effectiveInput]);
   const correctionOptions = useMemo(
     () => (effectiveInput ? buildCorrectionOptions(effectiveInput) : []),
@@ -346,7 +340,7 @@ export default function QuickEntryResultPage() {
         previewImageUrl: null,
         imageWarning: ""
       });
-    } catch (error) {
+    } catch {
       setResultState("failed");
       if (!resolvedResult && fallbackResult) {
         setResolvedResult(fallbackResult);
@@ -407,16 +401,30 @@ export default function QuickEntryResultPage() {
   imageStateRef.current = imageState;
   const imageUrlRef = useRef(imageUrl);
   imageUrlRef.current = imageUrl;
+  const clearImageRetryTimer = useCallback(() => {
+    if (imageRetryTimerRef.current !== null) {
+      window.clearTimeout(imageRetryTimerRef.current);
+      imageRetryTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearImageRetryTimer(), [clearImageRetryTimer]);
 
   const requestImageResult = useCallback(
-    async (targetInput: QuickEntryInput, opts?: { manual?: boolean }) => {
+    async (targetInput: QuickEntryInput, opts?: { manual?: boolean; preserveProgress?: boolean }) => {
       const requestSeq = ++imageRequestSeqRef.current;
+      if (!opts?.preserveProgress) {
+        imageRetryCountRef.current = 0;
+        clearImageRetryTimer();
+      }
       setHasTriedImageGeneration(true);
       setImageState("generating");
       setImageMessage("预览图生成中，请稍候...");
       setImageInfoHint("");
-      setImageProgress(8);
-      setImageElapsedSeconds(0);
+      if (!opts?.preserveProgress) {
+        setImageProgress(8);
+        setImageElapsedSeconds(0);
+      }
       try {
         const response = await fetch("/api/quick/generate-image", {
           method: "POST",
@@ -439,15 +447,21 @@ export default function QuickEntryResultPage() {
               usedFallbackToDefault?: boolean;
               usedReferenceImage?: boolean;
               error?: string;
+              retryable?: boolean;
             }
           | null;
         if (!response.ok || !data?.previewImageUrl) {
-          throw new Error(data?.error ?? "预览图生成失败，请稍后重试。");
+          const apiError = new Error(data?.error ?? "预览图生成失败，请稍后重试。") as Error & { retryable?: boolean };
+          apiError.retryable = Boolean(data?.retryable);
+          throw apiError;
         }
         if (requestSeq !== imageRequestSeqRef.current) return;
+        clearImageRetryTimer();
+        imageRetryCountRef.current = 0;
         setImageUrl(data.previewImageUrl);
         setImageState("idle");
         setImageProgress(100);
+        setImageMessage("");
         const messageParts: string[] = [];
         if (data.usedReferenceImage) {
           messageParts.push("已使用参考图引导生成。");
@@ -476,7 +490,31 @@ export default function QuickEntryResultPage() {
         });
       } catch (error) {
         if (requestSeq !== imageRequestSeqRef.current) return;
-        const message = error instanceof Error ? error.message : "预览图生成失败，请稍后重试。";
+        const message =
+          error instanceof Error
+            ? error.message
+            : typeof error === "object" && error !== null && "message" in error
+              ? String((error as { message: unknown }).message)
+              : "预览图生成失败，请稍后重试。";
+        const retryable = Boolean(
+          error instanceof Error &&
+            "retryable" in error &&
+            (error as Error & { retryable?: boolean }).retryable
+        );
+        const nextDelay = IMAGE_AUTO_RETRY_DELAYS_MS[imageRetryCountRef.current];
+        if (retryable && typeof nextDelay === "number") {
+          imageRetryCountRef.current += 1;
+          const retryRound = imageRetryCountRef.current;
+          setImageState("generating");
+          setImageMessage("");
+          setImageInfoHint(`通道繁忙，正在自动重试第 ${retryRound} 次...`);
+          clearImageRetryTimer();
+          imageRetryTimerRef.current = window.setTimeout(() => {
+            void requestImageResult(targetInput, { preserveProgress: true });
+          }, nextDelay);
+          return;
+        }
+        clearImageRetryTimer();
         setImageInfoHint("");
         setImageState("failed");
         setImageProgress(100);
@@ -499,7 +537,7 @@ export default function QuickEntryResultPage() {
         });
       }
     },
-    [quickProjectId]
+    [clearImageRetryTimer, quickProjectId]
   );
 
   useEffect(() => {
@@ -526,6 +564,33 @@ export default function QuickEntryResultPage() {
     void requestImageResult(effectiveInput);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveInput, previewImageUrl, resolvedResult, resultState, source]);
+
+  useEffect(() => {
+    if (
+      source === "ai" ||
+      !effectiveInput?.idea ||
+      !dbResult ||
+      dbLoading ||
+      imageStateRef.current === "generating" ||
+      imageUrlRef.current
+    ) {
+      return;
+    }
+    const requestKey = [
+      "image-db-retry-v1",
+      effectiveInput.idea.trim(),
+      effectiveInput.direction,
+      effectiveInput.style,
+      effectiveInput.scale,
+      effectiveInput.referenceImage.trim(),
+      effectiveInput.correctionIntent?.trim() || ""
+    ].join("|");
+    if (imageAutoRequestedKeyRef.current === requestKey) return;
+    imageAutoRequestedKeyRef.current = requestKey;
+
+    void requestImageResult(effectiveInput);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dbLoading, dbResult, effectiveInput, source]);
 
   const shouldBlockForDbLoading = dbLoading && !effectiveInput && !resolvedResult;
   if (shouldBlockForDbLoading) {
@@ -743,7 +808,7 @@ export default function QuickEntryResultPage() {
               <span className="ml-1 inline-block h-2.5 w-2.5 animate-spin rounded-sm border-2 border-blue-400 border-t-transparent" />
             </div>
             <p>正在帮你整理这个创意</p>
-            <p className="mt-1 text-xs text-blue-700">先给你方向，再把画面补出来。</p>
+            <p className="mt-1 text-xs text-blue-700">{imageInfoHint || "先给你方向，再把画面补出来。"}</p>
             <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
               <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
             </div>
@@ -762,7 +827,11 @@ export default function QuickEntryResultPage() {
               </div>
             )}
             {imageShowRetryInline && (
-              <p className="mt-1 text-xs text-blue-700">生成时间较长，你可以点击下方按钮重试，或稍后从项目列表查看。</p>
+              <p className="mt-1 text-xs text-blue-700">
+                {imageState === "failed" && imageMessage
+                  ? `${imageMessage} 你可以点击下方按钮重试。`
+                  : "生成时间较长，你可以点击下方按钮重试，或稍后从项目列表查看。"}
+              </p>
             )}
             {imageShowRetryInline && (
               <button

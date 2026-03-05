@@ -295,7 +295,7 @@ AI_IMAGE_ALIAS=default
 | 本地开发 | `npm run dev` |
 | 本地构建 | `npm run build` |
 | 推代码到 GitHub | `git add . && git commit -m "说明" && git push origin main` |
-| ECS 一键部署 | `cd /root/ai-moc-design-assistant && git pull origin main && npm install && npm run build && pm2 restart aai-moc-design-assistant` |
+| ECS 一键部署 | `cd /root/ai-moc-design-assistant && git pull origin main && npm install && npm run build && pm2 restart ai-moc-design-assistant` |
 | 看 ECS 日志 | `pm2 logs ai-moc --lines 200` |
 | 重启 ECS 应用 | `pm2 restart ai-moc` |
 | 看 PM2 状态 | `pm2 list` |
