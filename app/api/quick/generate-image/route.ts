@@ -60,10 +60,10 @@ function toFriendlyImageError(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error || "");
   const lowerRaw = raw.toLowerCase();
   if (lowerRaw.includes("fallback_exhausted")) {
-    return "现在设计积木的人太多了，AI 画手忙不过来，稍后去项目列表看看，我们一定会帮你画出来。";
+    return "现在设计积木的人太多了，AI 设计师忙不过来，稍后去项目列表看看，我们一定会帮你设计出来。";
   }
   if (raw.includes("used_up") || raw.toLowerCase().includes("balance is not sufficient")) {
-    return "AI 画手今天的画纸用完了，正在补充中，请稍后再来试试。";
+    return "AI 积木设计师今天的设计配额用完了，正在补充中，请稍后再来试试。";
   }
   if (
     raw.includes("No available channel") ||
@@ -71,7 +71,7 @@ function toFriendlyImageError(error: unknown) {
     lowerRaw.includes("channel busy") ||
     lowerRaw.includes("service unavailable")
   ) {
-    return "大家都在设计自己的积木创意，AI 画手正忙着赶图，请稍后去项目列表查看。";
+    return "大家都在设计自己的积木创意，AI 设计师正忙着赶稿，请稍后去项目列表查看。";
   }
   if (
     lowerRaw.includes("timed out") ||
@@ -79,12 +79,12 @@ function toFriendlyImageError(error: unknown) {
     raw.includes("AbortError") ||
     lowerRaw.includes("aborted")
   ) {
-    return "这幅创意图 AI 画了比较久还没画完，稍后去项目列表看看，我们会帮你画好的。";
+    return "这个创意有点复杂，AI 设计师还在琢磨中，稍后去项目列表看看，我们会帮你设计好的。";
   }
   if (lowerRaw.includes("invalidparameter") || lowerRaw.includes("parameter `size` specified")) {
-    return "画布尺寸不太对，我们已经记录下来了，稍后会修好，请再试一次。";
+    return "设计参数需要调整一下，我们已经记录下来了，请再试一次。";
   }
-  return "AI 画手暂时走神了，稍后去项目列表查看，我们一定会帮你生成出来。";
+  return "AI 积木设计师暂时忙不过来，稍后去项目列表查看，我们一定会帮你设计出来。";
 }
 
 function classifyImageError(error: unknown): ImageErrorType {

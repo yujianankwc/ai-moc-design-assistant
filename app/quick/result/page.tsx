@@ -41,13 +41,6 @@ function firstSentenceOf(text: string) {
   return (hit?.[0] || text).trim();
 }
 
-function parsePublicSeconds(value: string | undefined, fallbackSeconds: number) {
-  const raw = Number(value);
-  if (!Number.isFinite(raw)) return fallbackSeconds;
-  const rounded = Math.round(raw);
-  return rounded > 0 ? rounded : fallbackSeconds;
-}
-
 const IMAGE_AUTO_RETRY_DELAYS_MS = [5000, 8000, 12000, 15000, 15000] as const;
 
 type QuickCorrectionOption = {
@@ -136,7 +129,7 @@ export default function QuickEntryResultPage() {
   const quickProjectIdFromQuery = searchParams.get("quickProjectId")?.trim() ?? "";
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [imageState, setImageState] = useState<"idle" | "generating" | "failed">("idle");
-  const [imageMessage, setImageMessage] = useState("");
+  const [, setImageMessage] = useState("");
   const [imageInfoHint, setImageInfoHint] = useState("");
   const [resultState, setResultState] = useState<"idle" | "generating" | "failed">("idle");
   const [quickProjectId, setQuickProjectId] = useState(quickProjectIdFromQuery);
@@ -382,19 +375,22 @@ export default function QuickEntryResultPage() {
 
   useEffect(() => {
     if (!hasTriedImageGeneration || imageUrl) {
-      setImageProgress((prev) => (prev >= 100 ? 100 : 8));
+      setImageProgress((prev) => (prev >= 100 ? 100 : 5));
       setImageElapsedSeconds(0);
       return;
     }
-    const timer = window.setInterval(() => {
-      setImageProgress((prev) => Math.min(prev + (prev < 60 ? 8 : 3), 95));
-    }, 900);
-    const elapsedTimer = window.setInterval(() => {
+    const progressTimer = window.setInterval(() => {
       setImageElapsedSeconds((prev) => prev + 1);
+      setImageProgress((prev) => {
+        if (prev >= 92) return 92;
+        if (prev < 40) return Math.min(prev + 0.65, 40);
+        if (prev < 70) return Math.min(prev + 0.25, 70);
+        if (prev < 90) return Math.min(prev + 0.1, 90);
+        return Math.min(prev + 0.03, 92);
+      });
     }, 1000);
     return () => {
-      window.clearInterval(timer);
-      window.clearInterval(elapsedTimer);
+      window.clearInterval(progressTimer);
     };
   }, [hasTriedImageGeneration, imageUrl]);
 
@@ -453,7 +449,7 @@ export default function QuickEntryResultPage() {
             }
           | null;
         if (!response.ok || !data?.previewImageUrl) {
-          const apiError = new Error(data?.error ?? "AI 画手暂时走神了，稍后去项目列表查看，我们一定会帮你生成出来。") as Error & { retryable?: boolean };
+          const apiError = new Error(data?.error ?? "AI 积木设计师暂时忙不过来，稍后去项目列表查看，我们一定会帮你设计出来。") as Error & { retryable?: boolean };
           apiError.retryable = Boolean(data?.retryable);
           throw apiError;
         }
@@ -467,12 +463,12 @@ export default function QuickEntryResultPage() {
         setReferenceImageWasDropped(Boolean(data.referenceImageDropped));
         const messageParts: string[] = [];
         if (data.referenceImageDropped) {
-          messageParts.push("人太多换了一位 AI 画手，参考图暂未用上，可点下方按钮再画一次。");
+          messageParts.push("排队的人有点多，换了一位设计师帮你，参考图暂未用上，可点下方按钮再试一次。");
         } else if (data.usedReferenceImage) {
           messageParts.push("已参考你的图片来画的哦。");
         }
         if (!data.referenceImageDropped && data.usedFallbackToDefault) {
-          messageParts.push("排队的人有点多，换了一位 AI 画手帮你完成。");
+          messageParts.push("排队设计的人有点多，已经换了一位设计师帮你搞定。");
         }
         setImageInfoHint(messageParts.join(" "));
         if (quickProjectId) {
@@ -500,7 +496,7 @@ export default function QuickEntryResultPage() {
             ? error.message
             : typeof error === "object" && error !== null && "message" in error
               ? String((error as { message: unknown }).message)
-              : "AI 画手暂时走神了，稍后去项目列表查看，我们一定会帮你生成出来。";
+              : "AI 积木设计师暂时忙不过来，稍后去项目列表查看，我们一定会帮你设计出来。";
         const retryable = Boolean(
           error instanceof Error &&
             "retryable" in error &&
@@ -512,7 +508,7 @@ export default function QuickEntryResultPage() {
           const retryRound = imageRetryCountRef.current;
           setImageState("generating");
           setImageMessage("");
-          setImageInfoHint(`设计的人有点多，AI 画手正在第 ${retryRound} 次排队中...`);
+          setImageInfoHint(`大家都在设计积木，AI 设计师正在第 ${retryRound} 次排队中...`);
           clearImageRetryTimer();
           imageRetryTimerRef.current = window.setTimeout(() => {
             void requestImageResult(targetInput, { preserveProgress: true });
@@ -631,15 +627,15 @@ export default function QuickEntryResultPage() {
     .replace(previewLead, "")
     .trim()
     .replace(/^[，。；\s]+/, "");
-  const imageWaitSeconds = parsePublicSeconds(process.env.NEXT_PUBLIC_IMAGE_WAIT_SECONDS, 30);
-  const imageRetrySeconds = parsePublicSeconds(process.env.NEXT_PUBLIC_IMAGE_RETRY_SECONDS, 90);
-  const normalizedRetrySeconds = Math.max(imageRetrySeconds, imageWaitSeconds + 1);
-  const imageFullTimeout = imageElapsedSeconds >= normalizedRetrySeconds;
-  const showLongWaitGuidance = imageElapsedSeconds >= imageWaitSeconds && !imageFullTimeout;
-  const imageShowRetryInline =
-    hasTriedImageGeneration &&
-    !imageUrl &&
-    imageState === "failed";
+  const showProjectListLink = imageElapsedSeconds >= 20 || imageState === "failed";
+  const showThreeMinuteGuidance = imageElapsedSeconds >= 180 || imageState === "failed";
+  const imageStageMessage = (() => {
+    if (imageInfoHint && imageState !== "failed") return imageInfoHint;
+    if (imageElapsedSeconds < 30) return "设计师已经接到你的创意，正在构思整体方案...";
+    if (imageElapsedSeconds < 90) return "正在拼搭积木结构和画面布局，预计还需要几分钟。";
+    if (imageElapsedSeconds < 180) return "好的设计需要一点时间，你可以先看看下方文字结果，我们在持续完善中。";
+    return "设计师正在打磨细节与质感，这一步通常会更久一点。";
+  })();
   const imageFromDbMissing = !imageUrl && !hasTriedImageGeneration && Boolean(dbResult) && !dbLoading;
   const displayTopJudgement = clampText(
     resolvedResult?.topJudgement || fallbackResult?.topJudgement || "正在生成中，请稍候...",
@@ -733,7 +729,7 @@ export default function QuickEntryResultPage() {
                 }}
                 className="mx-auto mt-2 block rounded-md border border-amber-300 bg-amber-50 px-3 py-1 text-xs text-amber-700 hover:bg-amber-100"
               >
-                让 AI 画手参考你的图再画一次
+                参考你的图再设计一次
               </button>
             )}
             {lightboxOpen && (
@@ -804,7 +800,7 @@ export default function QuickEntryResultPage() {
           </>
         ) : imageFromDbMissing ? (
           <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-            <p>AI 画手还没来得及画这张图，现在帮你补上？</p>
+            <p>AI 积木设计师还没来得及设计这张图，现在帮你补上？</p>
             <button
               type="button"
               onClick={() => {
@@ -814,57 +810,30 @@ export default function QuickEntryResultPage() {
               }}
               className="mt-2 rounded-md border border-blue-300 bg-white px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
             >
-              让 AI 画手画一张
+              让 AI 设计师设计一张
             </button>
           </div>
         ) : (
           <div className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
-            {!imageShowRetryInline && (
-              <div className="mb-2 flex items-center gap-1">
-                <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.2s]" />
-                <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.1s]" />
-                <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500" />
-                <span className="ml-1 inline-block h-2.5 w-2.5 animate-spin rounded-sm border-2 border-blue-400 border-t-transparent" />
-              </div>
-            )}
-            {imageShowRetryInline ? (
-              <>
-                <p>{imageMessage || "AI 画手暂时没画出来，别担心"}</p>
-                <p className="mt-1 text-xs text-blue-700">
-                  你也可以稍后去
-                  <Link href="/projects" className="mx-0.5 underline underline-offset-2 hover:text-blue-800">
-                    项目列表
-                  </Link>
-                  查看，我们会在后台帮你画好的。
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (effectiveInput) {
-                      void requestImageResult(effectiveInput, { manual: true });
-                    }
-                  }}
-                  className="mt-2 rounded-md border border-blue-300 bg-white px-3 py-1 text-xs text-blue-700 hover:bg-blue-50"
-                >
-                  让 AI 画手再画一次
-                </button>
-              </>
-            ) : (
-              <>
-                <p>AI 画手正在为你的创意作画</p>
-                {imageInfoHint && <p className="mt-1 text-xs text-blue-700">{imageInfoHint}</p>}
-                <div className="mt-2 h-2 w-full overflow-hidden rounded-full bg-blue-100">
-                  <div className="h-full rounded-full bg-blue-500 transition-all" style={{ width: `${imageProgress}%` }} />
-                </div>
-                <div className="mt-2 flex items-center justify-between text-xs text-blue-700">
-                  <span>已完成约 {imageProgress}%，可以先看下方文字结果</span>
-                  {showLongWaitGuidance && (
-                    <Link href="/projects" className="underline underline-offset-2 hover:text-blue-800">
-                      稍后去项目列表查看
-                    </Link>
-                  )}
-                </div>
-              </>
+            <div className="mb-2 flex items-center gap-1">
+              <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.2s]" />
+              <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500 [animation-delay:-0.1s]" />
+              <span className="h-2.5 w-2.5 animate-bounce rounded-sm bg-blue-500" />
+              <span className="ml-1 inline-block h-2.5 w-2.5 animate-spin rounded-sm border-2 border-blue-400 border-t-transparent" />
+            </div>
+            <p>AI 积木设计师正在为你设计中，预计 3-5 分钟，请耐心等待。</p>
+            <p className="mt-1 text-xs text-blue-700">{imageStageMessage}</p>
+            <div className="mt-3 h-2 w-full overflow-hidden rounded-full bg-blue-100">
+              <div className="h-full rounded-full bg-blue-500 transition-all duration-1000" style={{ width: `${imageProgress}%` }} />
+            </div>
+            {showProjectListLink && (
+              <p className="mt-3 text-xs text-blue-700">
+                {showThreeMinuteGuidance ? "设计还在进行中，你可以先去" : "也可以去"}
+                <Link href="/projects" className="mx-0.5 underline underline-offset-2 hover:text-blue-800">
+                  项目列表
+                </Link>
+                {showThreeMinuteGuidance ? "稍后查看，完成后会自动出现在那里。" : "稍后查看，设计好了会自动出现。"}
+              </p>
             )}
           </div>
         )}
