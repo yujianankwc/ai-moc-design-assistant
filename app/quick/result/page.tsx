@@ -398,6 +398,42 @@ export default function QuickEntryResultPage() {
   imageStateRef.current = imageState;
   const imageUrlRef = useRef(imageUrl);
   imageUrlRef.current = imageUrl;
+
+  // Poll DB every 15s while waiting for image generation.
+  // Handles reverse-proxy timeouts: the backend persists the image to DB, but
+  // the long-running fetch response never reaches the browser.
+  const IMAGE_POLL_INTERVAL_MS = 15_000;
+  useEffect(() => {
+    if (!quickProjectId || !hasTriedImageGeneration || imageUrl) return;
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/quick/projects/${quickProjectId}`);
+        if (!res.ok) return;
+        const data = (await res.json().catch(() => null)) as
+          | { quickProject?: { previewImageUrl?: string | null } }
+          | null;
+        const dbUrl = data?.quickProject?.previewImageUrl;
+        if (dbUrl && !imageUrlRef.current) {
+          setImageUrl(dbUrl);
+          setImageState("idle");
+          setImageProgress(100);
+          setImageMessage("");
+          setImageInfoHint("");
+          imageRequestSeqRef.current += 1;
+          updateQuickAIImageInSession({
+            idea: effectiveInput?.idea ?? "",
+            previewImageUrl: dbUrl,
+            imageWarning: ""
+          });
+        }
+      } catch {
+        // Polling failure is non-critical; next poll will retry.
+      }
+    };
+    const timer = window.setInterval(poll, IMAGE_POLL_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [quickProjectId, hasTriedImageGeneration, imageUrl, effectiveInput]);
+
   const clearImageRetryTimer = useCallback(() => {
     if (imageRetryTimerRef.current !== null) {
       window.clearTimeout(imageRetryTimerRef.current);

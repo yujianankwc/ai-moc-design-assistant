@@ -268,7 +268,14 @@ async function doImageRequest(
   }
 }
 
-export async function generateQuickPreviewImage(input: GenerateQuickPreviewImageInput) {
+export type GenerateQuickPreviewImageResult = {
+  url: string;
+  referenceImageUsed: boolean;
+};
+
+export async function generateQuickPreviewImage(
+  input: GenerateQuickPreviewImageInput
+): Promise<GenerateQuickPreviewImageResult> {
   const defaultAlias =
     process.env.AI_IMAGE_DEFAULT_ALIAS === "nano_banner" || process.env.AI_IMAGE_DEFAULT_ALIAS === "nano_banana"
       ? process.env.AI_IMAGE_DEFAULT_ALIAS
@@ -291,7 +298,8 @@ export async function generateQuickPreviewImage(input: GenerateQuickPreviewImage
   const bodyPayload = buildRequestBody(resolvedAlias, imageModel, imageSize, prompt, input.referenceImage);
 
   try {
-    return await doImageRequest(requestUrl, apiKey, bodyPayload, resolvedAlias, timeoutMs);
+    const url = await doImageRequest(requestUrl, apiKey, bodyPayload, resolvedAlias, timeoutMs);
+    return { url, referenceImageUsed: hasRef };
   } catch (firstError) {
     if (hasRef && resolvedAlias === "default") {
       console.warn(
@@ -300,7 +308,8 @@ export async function generateQuickPreviewImage(input: GenerateQuickPreviewImage
         }`
       );
       const fallbackBody = buildRequestBody(resolvedAlias, imageModel, imageSize, prompt, undefined);
-      return await doImageRequest(requestUrl, apiKey, fallbackBody, resolvedAlias, timeoutMs);
+      const url = await doImageRequest(requestUrl, apiKey, fallbackBody, resolvedAlias, timeoutMs);
+      return { url, referenceImageUsed: false };
     }
     throw firstError;
   }

@@ -3,8 +3,8 @@ import SafeNavLink from "@/components/safe-nav-link";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "AI MOC 设计助手",
-  description: "AI MOC 项目创作与协作助手"
+  title: "AI积木设计师",
+  description: "人人都是积木设计师。万物皆可积木。"
 };
 
 export const viewport: Viewport = {
@@ -34,9 +34,12 @@ export default function RootLayout({
         <div className="flex min-h-screen w-full max-w-[100vw] flex-col overflow-x-hidden">
           <header className="relative z-40 border-b border-slate-200 bg-white">
             <div className="mx-auto flex w-full max-w-5xl flex-col gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
-              <SafeNavLink href="/" className="text-base font-semibold text-slate-900 sm:text-lg">
-                AI MOC 设计助手
-              </SafeNavLink>
+              <div className="flex flex-col">
+                <SafeNavLink href="/" className="text-base font-semibold text-slate-900 sm:text-lg">
+                  AI积木设计师
+                </SafeNavLink>
+                <p className="mt-0.5 text-xs text-slate-500">人人都是积木设计师</p>
+              </div>
               <nav className="grid w-full grid-cols-5 gap-1 text-xs text-slate-600 sm:hidden">
                 {navItems.map((item) => (
                   <SafeNavLink
@@ -83,6 +86,9 @@ export default function RootLayout({
           <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6 sm:px-6 sm:py-8">{children}</main>
           <footer className="border-t border-slate-100 bg-white/80 py-3">
             <p className="mx-auto w-full max-w-5xl px-4 text-center text-[11px] text-slate-400 sm:px-6">
+              人人都是积木设计师。万物皆可积木
+            </p>
+            <p className="mx-auto mt-1 w-full max-w-5xl px-4 text-center text-[11px] text-slate-400 sm:px-6">
               鲁ICP备2020043483号-1，©2020-2026 酷玩潮®
             </p>
           </footer>

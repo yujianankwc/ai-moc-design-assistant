@@ -162,24 +162,29 @@ async function generateAndPersistQuickImageInBackground(input: {
   const imageMode = decideQuickImageMode(input.summary);
   try {
     let previewImageUrl = "";
+    // Background task also prefers default model when reference image is present.
+    const effectiveAlias = input.quickInput.referenceImage?.trim().startsWith("http") && alias !== "default"
+      ? "default"
+      : alias;
     try {
-      previewImageUrl = await generateQuickPreviewImage({
+      const result = await generateQuickPreviewImage({
         summary: input.summary,
         knowledge: input.knowledge,
         imageMode,
         referenceImage: input.quickInput.referenceImage,
         regenerateToken: input.regenerateToken,
-        imageModelAlias: alias
+        imageModelAlias: effectiveAlias
       });
+      previewImageUrl = result.url;
     } catch (error) {
       const rawError = error instanceof Error ? error.message : String(error || "");
-      if (!shouldFallbackToDefault(rawError, alias)) {
+      if (!shouldFallbackToDefault(rawError, effectiveAlias)) {
         throw error;
       }
       let fallbackRaw = rawError;
       for (let attempt = 1; attempt <= BACKFILL_FALLBACK_MAX_RETRIES; attempt += 1) {
         try {
-          previewImageUrl = await generateQuickPreviewImage({
+          const result = await generateQuickPreviewImage({
             summary: input.summary,
             knowledge: input.knowledge,
             imageMode,
@@ -187,6 +192,7 @@ async function generateAndPersistQuickImageInBackground(input: {
             regenerateToken: input.regenerateToken,
             imageModelAlias: "default"
           });
+          previewImageUrl = result.url;
           break;
         } catch (fallbackError) {
           fallbackRaw = fallbackError instanceof Error ? fallbackError.message : String(fallbackError || "");

@@ -4,7 +4,7 @@ import {
   buildQuickKnowledgePack,
   decideQuickImageMode
 } from "@/lib/quick-generation-pipeline";
-import { generateQuickPreviewImage, isImageGenerationUpstreamError } from "@/services/ai-quick-image";
+import { generateQuickPreviewImage, isImageGenerationUpstreamError, type GenerateQuickPreviewImageResult } from "@/services/ai-quick-image";
 import { updateQuickProjectImageForDemoUser } from "@/services/project-service";
 import type { QuickDirection, QuickEntryInput, QuickScalePreference, QuickStyle } from "@/types/quick-entry";
 
@@ -218,9 +218,24 @@ export async function POST(request: Request) {
     const summary = buildQuickGenerationSummary(input);
     const knowledge = buildQuickKnowledgePack(summary);
     const imageMode = decideQuickImageMode(summary);
-    const requestedAlias = resolveAliasFromBody(body);
+    let requestedAlias = resolveAliasFromBody(body);
     const usedReferenceImage = hasReferenceImage(input);
     const ideaLength = input.idea.length;
+
+    // When a reference image is present, prefer the default (Doubao Seedream) model
+    // which reliably supports the `image` parameter; nano is unstable with references on production.
+    if (usedReferenceImage && requestedAlias !== "default") {
+      console.log(
+        JSON.stringify({
+          tag: "quick_image_generation",
+          phase: "override_alias_for_ref_image",
+          originalAlias: requestedAlias,
+          overriddenAlias: "default"
+        })
+      );
+      requestedAlias = "default";
+    }
+
     aliasForLog = requestedAlias;
     usedReferenceImageForLog = usedReferenceImage;
     ideaLengthForLog = ideaLength;
@@ -236,9 +251,10 @@ export async function POST(request: Request) {
       : 1;
 
     let primaryLastRaw = "";
+    let primaryResult: GenerateQuickPreviewImageResult | null = null;
     for (let attempt = 1; attempt <= primaryMaxAttempts; attempt += 1) {
       try {
-        previewImageUrl = await generateQuickPreviewImage({
+        primaryResult = await generateQuickPreviewImage({
           summary,
           knowledge,
           imageMode,
@@ -246,6 +262,10 @@ export async function POST(request: Request) {
           regenerateToken: regenToken,
           imageModelAlias: requestedAlias
         });
+        previewImageUrl = primaryResult.url;
+        if (usedReferenceImage && !primaryResult.referenceImageUsed) {
+          referenceImageDropped = true;
+        }
         break;
       } catch (error) {
         primaryLastRaw = error instanceof Error ? error.message : String(error || "");
@@ -274,9 +294,10 @@ export async function POST(request: Request) {
       usedFallbackToDefault = true;
       usedFallbackForLog = true;
       let fallbackLastRaw = "";
+      let fallbackResult: GenerateQuickPreviewImageResult | null = null;
       for (let attempt = 1; attempt <= FALLBACK_MAX_RETRIES; attempt += 1) {
         try {
-          previewImageUrl = await generateQuickPreviewImage({
+          fallbackResult = await generateQuickPreviewImage({
             summary,
             knowledge,
             imageMode,
@@ -284,6 +305,10 @@ export async function POST(request: Request) {
             regenerateToken: regenToken,
             imageModelAlias: "default"
           });
+          previewImageUrl = fallbackResult.url;
+          if (usedReferenceImage && !fallbackResult.referenceImageUsed) {
+            referenceImageDropped = true;
+          }
           break;
         } catch (fallbackError) {
           const fallbackRaw = fallbackError instanceof Error ? fallbackError.message : String(fallbackError || "");
