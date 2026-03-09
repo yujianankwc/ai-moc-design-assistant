@@ -1,22 +1,36 @@
 import type { NextRequest } from "next/server";
 import { NextResponse } from "next/server";
-import { SESSION_COOKIE_NAME, SESSION_COOKIE_VALUE } from "@/lib/session";
-import { VISITOR_COOKIE_NAME, VISITOR_HEADER_NAME, normalizeVisitorId } from "@/lib/visitor-id";
+import { SESSION_COOKIE_NAME, shouldUseSecureCookies, verifyInviteSessionToken } from "@/lib/session";
+import {
+  createVisitorToken,
+  resolveVisitorIdFromToken,
+  VISITOR_COOKIE_NAME,
+  VISITOR_HEADER_NAME
+} from "@/lib/visitor-id";
 
-export function proxy(request: NextRequest) {
-  const existingVisitorId = normalizeVisitorId(request.cookies.get(VISITOR_COOKIE_NAME)?.value ?? "");
+export async function proxy(request: NextRequest) {
+  const visitorToken = request.cookies.get(VISITOR_COOKIE_NAME)?.value ?? "";
+  const existingVisitorId = await resolveVisitorIdFromToken(visitorToken);
   const visitorId = existingVisitorId || crypto.randomUUID().replace(/-/g, "").slice(0, 24);
+  const nextVisitorToken = existingVisitorId ? visitorToken : await createVisitorToken(visitorId);
   const requestHeaders = new Headers(request.headers);
   requestHeaders.set(VISITOR_HEADER_NAME, visitorId);
 
   const pathname = request.nextUrl.pathname;
   const sessionCookie = request.cookies.get(SESSION_COOKIE_NAME)?.value;
-  const isLoggedIn = sessionCookie === SESSION_COOKIE_VALUE;
+  const isLoggedIn = await verifyInviteSessionToken(sessionCookie);
   const isProjectsRoute = pathname.startsWith("/projects");
   const isQuickRoute = pathname.startsWith("/quick");
-  const isProtectedPageRoute = isProjectsRoute || isQuickRoute;
+  const isIntentsRoute = pathname.startsWith("/intents");
+  const isAdminRoute = pathname.startsWith("/admin");
+  const isProtectedPageRoute = isProjectsRoute || isQuickRoute || isIntentsRoute || isAdminRoute;
   const isProtectedApiRoute =
-    pathname.startsWith("/api/projects") || pathname.startsWith("/api/quick") || pathname.startsWith("/api/service-requests");
+    pathname.startsWith("/api/projects") ||
+    pathname.startsWith("/api/quick") ||
+    pathname.startsWith("/api/service-requests") ||
+    pathname.startsWith("/api/intents") ||
+    pathname.startsWith("/api/quotes") ||
+    pathname.startsWith("/api/admin");
 
   if (!isLoggedIn && isProtectedApiRoute) {
     return NextResponse.json({ error: "请先输入邀请码登录。" }, { status: 401 });
@@ -28,11 +42,12 @@ export function proxy(request: NextRequest) {
     loginUrl.searchParams.set("next", nextPath);
     const redirectResponse = NextResponse.redirect(loginUrl);
     if (!existingVisitorId) {
-      redirectResponse.cookies.set(VISITOR_COOKIE_NAME, visitorId, {
+      redirectResponse.cookies.set(VISITOR_COOKIE_NAME, nextVisitorToken, {
         path: "/",
         maxAge: 60 * 60 * 24 * 365,
         sameSite: "lax",
-        httpOnly: false
+        httpOnly: true,
+        secure: shouldUseSecureCookies(request.url)
       });
     }
     return redirectResponse;
@@ -48,11 +63,12 @@ export function proxy(request: NextRequest) {
     }
   });
   if (!existingVisitorId) {
-    response.cookies.set(VISITOR_COOKIE_NAME, visitorId, {
+    response.cookies.set(VISITOR_COOKIE_NAME, nextVisitorToken, {
       path: "/",
       maxAge: 60 * 60 * 24 * 365,
       sameSite: "lax",
-      httpOnly: false
+      httpOnly: true,
+      secure: shouldUseSecureCookies(request.url)
     });
   }
   return response;

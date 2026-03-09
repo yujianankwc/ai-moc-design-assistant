@@ -3,6 +3,7 @@ import {
   type MockProjectResult,
   mockProjectResultMap
 } from "@/services/mock-project-results";
+import Link from "next/link";
 import ServiceRequestModals from "@/components/service-request-modals";
 import RegenerateProjectButton from "@/components/regenerate-project-button";
 import ManualEditSection from "@/components/manual-edit-section";
@@ -18,10 +19,19 @@ import { buildCreativeProfileOverview } from "@/lib/creative-profile-v1";
 import { pickSimilarReferences } from "@/lib/reference-matcher";
 import { toResultDiffSnapshot } from "@/lib/result-diff";
 import {
+  formatNextSuggestionLabel,
+  getStageExplanation,
+  inferFitForFromJudgement,
+  inferJudgementFromProjectSnapshot,
+  inferNextSuggestionFromJudgement,
+  mapProjectCategoryToPathLabel,
+  mapProjectStatusToUnifiedStage,
+  PROJECT_STAGE_LABELS
+} from "@/lib/project-language";
+import {
   mapAudience,
   mapBuildDifficulty,
   mapCategory,
-  mapProjectStatus,
   mapSizeTarget,
   mapStyle
 } from "@/lib/display-mappers";
@@ -142,28 +152,22 @@ function composeResultFromDb(params: {
 
 function getMainRecommendation(productionScore: number) {
   if (productionScore >= 80) {
-    return "提交原创计划评审";
+    return "先把这个方向补充完整";
   }
   if (productionScore >= 60) {
-    return "申请打样可行性评估";
+    return "去看试做路径";
   }
   if (productionScore >= 40) {
-    return "申请 BOM 快速校对";
+    return "去看试做路径";
   }
-  return "先补充方案信息 / 先收敛结构";
+  return "先把这个方向补充完整";
 }
 
 function getRecommendationReasonText(recommendation: string) {
-  if (recommendation === "提交原创计划评审") {
-    return "当前方案识别度与推进条件相对更完整，先做评审更有助于明确下一轮资源投入。";
+  if (recommendation === "去看试做路径") {
+    return "当前更需要先验证结构与装配可行性，再决定是否继续补充完整方案。";
   }
-  if (recommendation === "申请打样可行性评估") {
-    return "当前更需要先验证结构与装配可行性，再决定是否进入完整评审。";
-  }
-  if (recommendation === "申请 BOM 快速校对") {
-    return "当前优先把零件结构与配比收敛清楚，更有助于降低后续返工成本。";
-  }
-  return "当前信息仍偏前期，先补关键约束与结构说明，再推进后续动作会更稳妥。";
+  return "当前信息仍偏前期，先把方向、结构和关键约束补完整，再继续推进会更稳。";
 }
 
 export default async function ProjectResultPage({ params }: ProjectResultPageProps) {
@@ -172,7 +176,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
   let fromRealProject = false;
   let usedFallbackOutput = false;
   let usedAiFallbackOutput = false;
-  let projectStatusLabel: string | null = null;
+  let projectStatusRaw: string | null = null;
   let realProjectId: string | null = null;
   let updatedAtText = "演示数据";
 
@@ -181,7 +185,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
       const dbDetail = await getProjectWithOutputById(id);
 
       if (dbDetail?.project && dbDetail.output) {
-        projectStatusLabel = mapProjectStatus(dbDetail.project.status);
+        projectStatusRaw = dbDetail.project.status;
         updatedAtText = new Date(dbDetail.project.updated_at).toLocaleString("zh-CN");
         usedAiFallbackOutput = Boolean(
           dbDetail.output.internal_recommendation?.includes(SYSTEM_FALLBACK_MARKER)
@@ -194,7 +198,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         fromRealProject = true;
         realProjectId = id;
       } else if (dbDetail?.project && !dbDetail.output) {
-        projectStatusLabel = mapProjectStatus(dbDetail.project.status);
+        projectStatusRaw = dbDetail.project.status;
         updatedAtText = new Date(dbDetail.project.updated_at).toLocaleString("zh-CN");
         const fallback = mockProjectResultMap[DEFAULT_MOCK_PROJECT_ID];
         if (fallback) {
@@ -224,10 +228,22 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
   if (!result) return null;
 
   const mainRecommendation = getMainRecommendation(result.production_score);
+  const unifiedStage = mapProjectStatusToUnifiedStage(projectStatusRaw);
+  const pathLabel = mapProjectCategoryToPathLabel(result.category);
+  const projectJudgement = inferJudgementFromProjectSnapshot({
+    category: result.category,
+    style: result.style,
+    audience: result.audience,
+    designBrief: result.designBrief,
+    recommendation: mainRecommendation
+  });
+  const fitForText = inferFitForFromJudgement(projectJudgement);
+  const nextSuggestion = formatNextSuggestionLabel(inferNextSuggestionFromJudgement(projectJudgement));
+  const stageExplanation = getStageExplanation(unifiedStage, pathLabel);
   const exportData: ProjectBriefExportData = {
     projectName: result.projectTitle,
     projectId: result.id,
-    statusLabel: projectStatusLabel ?? "演示结果",
+    statusLabel: unifiedStage,
     categoryLabel: mapCategory(result.category),
     styleLabel: mapStyle(result.style),
     sizeTargetLabel: mapSizeTarget(result.sizeTarget),
@@ -297,25 +313,67 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
 
   return (
     <section className="space-y-4 sm:space-y-5">
-      <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">项目方案结果</h1>
+      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex rounded-full border-2 border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
+            当前状态 · {unifiedStage}
+          </span>
+          <span className="inline-flex rounded-full border-2 border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700">
+            当前路径 · {pathLabel}
+          </span>
+        </div>
+        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">{result.projectTitle}</h1>
+        <p className="text-sm text-slate-600">{stageExplanation}</p>
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl bg-slate-50 px-4 py-3">
+            <p className="text-xs font-bold text-slate-400">当前判断</p>
+            <p className="mt-1 text-sm font-bold text-slate-900">{projectJudgement}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 px-4 py-3">
+            <p className="text-xs font-bold text-slate-400">当前更适合</p>
+            <p className="mt-1 text-sm font-bold text-slate-900">{fitForText}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 px-4 py-3">
+            <p className="text-xs font-bold text-slate-400">当前建议</p>
+            <p className="mt-1 text-sm font-bold text-amber-700">{nextSuggestion}</p>
+          </div>
+        </div>
+        <div className="grid gap-2 sm:grid-cols-4">
+          {PROJECT_STAGE_LABELS.map((step) => {
+            const active = PROJECT_STAGE_LABELS.indexOf(step) <= PROJECT_STAGE_LABELS.indexOf(unifiedStage);
+            return (
+              <p
+                key={step}
+                className={
+                  active
+                    ? "rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900"
+                    : "rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500"
+                }
+              >
+                {step}
+              </p>
+            );
+          })}
+        </div>
+      </div>
       {!fromRealProject && !mockProjectResultMap[id] && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          当前项目尚未接入真实方案输出，已为你展示演示方案内容。
+          当前项目还没有真实方案内容，这里先给你一版演示方案，方便继续判断怎么推进。
         </div>
       )}
       {fromRealProject && usedFallbackOutput && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          当前项目已读取真实基础信息，方案输出暂用演示模板占位展示。
+          当前项目已读取真实基础信息，这里先用占位方案帮助你继续判断路径。
         </div>
       )}
       {fromRealProject && usedAiFallbackOutput && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          AI 生成暂时失败，当前展示的是自动回退结果，建议稍后重新生成。
+          AI 这次没有顺利补完方案，这里先展示一版自动回退内容，方便你继续看方向判断。
         </div>
       )}
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">1) 项目头部信息区</h2>
+        <h2 className="text-base font-semibold text-slate-900">项目概览</h2>
         {realProjectId && (
           <div className="mt-3">
             <RegenerateProjectButton
@@ -327,7 +385,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         <div className="mt-2 grid gap-2 text-sm text-slate-700 md:grid-cols-2">
           <p className="break-all">项目 ID：{result.id}</p>
           <p>项目名称：{result.projectTitle}</p>
-          <p>项目状态：{projectStatusLabel ?? "演示结果"}</p>
+          <p>当前状态：{unifiedStage}</p>
           <p>作品类型：{mapCategory(result.category)}</p>
           <p>风格方向：{mapStyle(result.style)}</p>
           <p>目标体量：{mapSizeTarget(result.sizeTarget)}</p>
@@ -340,12 +398,12 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
       )}
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">本次判断</h2>
+        <h2 className="text-base font-semibold text-slate-900">当前判断</h2>
         <p className="mt-2 text-sm text-slate-700">{resultJudgement}</p>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">2) AI 设计简报区</h2>
+        <h2 className="text-base font-semibold text-slate-900">判断补充</h2>
         <p className="mt-2 text-sm text-slate-700">{designBriefSummary}</p>
         <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-700">
           {designBriefHighlights.length > 0 ? (
@@ -357,12 +415,12 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">3) 创意画像概览</h2>
+        <h2 className="text-base font-semibold text-slate-900">当前更适合</h2>
         <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-          {creativeProfile.overallSummary}
+          {fitForText}
         </p>
         <p className="mt-2 text-xs text-slate-500">
-          用于补充创意判断视角，帮助你快速识别“更适合继续打磨的方向”。
+          用来补充这条方向当前更适合怎么走，避免把它看成静态档案。
         </p>
         <div className="mt-3 grid gap-3 md:grid-cols-2">
           {creativeProfile.items.map((item) => (
@@ -380,7 +438,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">4) 相似参考区</h2>
+        <h2 className="text-base font-semibold text-slate-900">相似方向参考</h2>
         <p className="mt-2 text-xs text-slate-500">
           以下参考用于启发同类方向与落地思路，不代表唯一标准答案。
         </p>
@@ -416,9 +474,9 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">5) 零件规划草案</h2>
+        <h2 className="text-base font-semibold text-slate-900">结构与零件草案</h2>
         <p className="mt-2 text-sm text-slate-600">
-          用于前期评审与打样前规划，不作为最终生产清单。
+          用于前期判断与打样前规划，不作为最终生产清单。
         </p>
         <div className="mt-3 space-y-3">
           {result.bomDraft.map((item) => (
@@ -432,7 +490,10 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">6) 风险提示区</h2>
+        <h2 className="text-base font-semibold text-slate-900">当前状态说明</h2>
+        <p className="mt-2 text-sm text-slate-700">{stageExplanation}</p>
+        <p className="mt-2 text-xs text-slate-500">当前建议：{nextSuggestion}</p>
+        <h3 className="mt-4 text-sm font-semibold text-slate-900">现在最该注意</h3>
         <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-slate-700">
           {result.risks.map((item) => (
             <li key={item}>{item}</li>
@@ -441,13 +502,13 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">7) 可生产性建议区</h2>
+        <h2 className="text-base font-semibold text-slate-900">试做路径参考</h2>
         <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
           可生产性评分：{result.production_score} / 100
           <br />
           搭建复杂度：{mapBuildDifficulty(result.buildDifficulty)}
           <br />
-          主推荐动作：{mainRecommendation}
+          当前建议：{nextSuggestion}
           <p className="mt-2 text-xs text-blue-800">
             该评分仅用于前期判断，不等同于真实打样或量产结论。
           </p>
@@ -470,7 +531,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">8) 关键改造建议区</h2>
+        <h2 className="text-base font-semibold text-slate-900">当前建议</h2>
         <p className="mt-2 text-xs text-slate-500">
           以下建议基于当前文字输入与零件草案，用于前期收敛方向，不等同于真实打样结论。
         </p>
@@ -495,7 +556,7 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">9) 人工编辑区</h2>
+        <h2 className="text-base font-semibold text-slate-900">继续补充这个方向</h2>
         <div className="mt-3">
           {realProjectId ? (
             <ManualEditSection projectId={realProjectId} initialContent={result.manualEditDraft} />
@@ -514,8 +575,8 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-base font-semibold text-slate-900">10) 下一步合作建议区</h2>
-        <p className="mt-2 text-sm text-slate-700">当前场景：{result.scenarioTag}</p>
+        <h2 className="text-base font-semibold text-slate-900">当前更适合怎么推进</h2>
+        <p className="mt-2 text-sm text-slate-700">当前建议：{nextSuggestion}</p>
         <p className="mt-1 text-sm text-slate-600">为什么是这一步：{recommendationReasonText}</p>
         <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-slate-700">
           {result.collaborationAdvice.map((item) => (
@@ -525,13 +586,27 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-base font-semibold text-slate-900">11) 底部操作区</h2>
+        <h2 className="text-base font-semibold text-slate-900">推进路径选择</h2>
         <div className="mt-3">
           <ServiceRequestModals
             mainRecommendation={mainRecommendation}
             projectId={id}
             exportData={exportData}
           />
+        </div>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Link
+            href="/quick/path/small-batch"
+            className="inline-flex rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            去看试做路径
+          </Link>
+          <Link
+            href="/showcase"
+            className="inline-flex rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            看相似灵感
+          </Link>
         </div>
       </section>
     </section>

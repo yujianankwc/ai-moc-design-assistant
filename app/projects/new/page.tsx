@@ -70,8 +70,8 @@ const fieldLabels: Record<keyof FormData, string> = {
 };
 
 function inputClass(error?: string) {
-  return `w-full rounded-md border px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2 ${
-    error ? "border-rose-300 bg-rose-50" : "border-slate-300"
+  return `w-full rounded-xl border-2 px-4 py-3 text-sm font-medium outline-none transition-all focus:border-amber-400 focus:ring-4 focus:ring-amber-400/20 ${
+    error ? "border-rose-300 bg-rose-50" : "border-slate-200 bg-white"
   }`;
 }
 
@@ -149,11 +149,11 @@ export default function ProjectCreatePage() {
       | null;
 
     if (!response.ok) {
-      throw new Error(data?.error ?? "提交失败，请稍后再试");
+      throw new Error(data?.error ?? "这条完整方案路径暂时没有记下来，请稍后再试。");
     }
 
     if (!data?.projectId) {
-      throw new Error("项目创建失败");
+      throw new Error("这条完整方案路径暂时还没创建成功，请稍后再试。");
     }
 
     return {
@@ -165,15 +165,15 @@ export default function ProjectCreatePage() {
 
   const handleSaveDraft = async () => {
     setIsSubmitting(true);
-    setFeedback("正在保存草稿...");
+    setFeedback("正在先记下这版方向...");
 
     try {
       await persistProject("draft");
-      setFeedback("草稿已保存，正在返回项目列表。");
+      setFeedback("这版方向已先记下，正在返回项目列表。");
       router.push("/projects");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "保存草稿失败";
-      setFeedback(`保存失败：${message}`);
+      const message = error instanceof Error ? error.message : "这版方向暂时没有记下来";
+      setFeedback(`暂存失败：${message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -187,18 +187,18 @@ export default function ProjectCreatePage() {
     }
 
     setIsSubmitting(true);
-    setFeedback("正在保存项目并生成方案...");
+    setFeedback("正在补充这条完整方案路径...");
 
     try {
       const result = await persistProject("generating");
       const hint = result.usedFallbackOutput
-        ? result.warning || "AI 生成失败，已使用回退结果。"
-        : "项目已保存，正在进入方案结果页。";
+        ? result.warning || "AI 这次没有顺利补完内容，已先用回退结果帮你继续看方向。"
+        : "这条完整方案路径已经记下了，正在进入项目详情页。";
       setFeedback(hint);
       router.push(`/projects/${result.projectId}`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "生成项目方案失败";
-      setFeedback(`操作失败：${message}`);
+      const message = error instanceof Error ? error.message : "这条完整方案路径暂时没有整理出来";
+      setFeedback(`这一步暂时没有完成：${message}`);
     } finally {
       setIsSubmitting(false);
     }
@@ -206,24 +206,27 @@ export default function ProjectCreatePage() {
 
   return (
     <section className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">提交创意项目</h1>
-        <p className="mt-1 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs text-amber-800">
-          专业完整入口（高级）
-        </p>
-        <p className="text-sm text-slate-600">
-          用几分钟把你的创意方向、关键约束和推进目标说清楚，我们会先生成一版可讨论的方案草案。
+      <div className="space-y-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">提交创意项目</h1>
+          <span className="inline-flex rounded-full border-2 border-amber-300 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-900 shadow-sm">
+            当前路径 · 完整方案路径
+          </span>
+        </div>
+        <p className="text-sm font-medium text-slate-600">
+          这条路径适合方向已经比较明确、希望把创意补充得更完整的人。完整方案用于补充结构、风格和推进思路，不代表最终打样结论。
         </p>
       </div>
 
       <form
-        className="space-y-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-6"
+        className="space-y-6 rounded-3xl border-2 border-slate-100 bg-white p-6 shadow-sm sm:p-8"
         onSubmit={(event) => event.preventDefault()}
       >
-        <section className="space-y-4">
-          <h2 className="text-base font-semibold text-slate-900">先定义项目方向</h2>
-          <p className="text-xs text-slate-500">先把题材、风格和体量定下来，后续判断会更稳定。</p>
-
+        <section className="space-y-5">
+          <div>
+            <h2 className="text-lg font-bold text-slate-900">先定义项目方向</h2>
+            <p className="mt-1 text-xs font-medium text-slate-500">先把题材、风格和体量定下来，方便后续判断这个方向是否值得继续推进。</p>
+          </div>
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2">
               <span className="text-sm font-medium text-slate-700">项目名称 *</span>
@@ -319,8 +322,8 @@ export default function ProjectCreatePage() {
         </section>
 
         <section className="space-y-4 border-t border-slate-100 pt-5">
-          <h2 className="text-base font-semibold text-slate-900">再说清核心创意</h2>
-          <p className="text-xs text-slate-500">这里决定方案会往哪条路走，建议尽量具体。</p>
+          <h2 className="text-lg font-bold text-slate-900">再说清核心创意</h2>
+          <p className="text-xs text-slate-500">这里是在帮你把这个方向补充完整，方便后续继续沟通和评估。</p>
 
           <label className="space-y-2">
             <span className="text-sm font-medium text-slate-700">作品描述 *</span>
@@ -360,10 +363,10 @@ export default function ProjectCreatePage() {
         </section>
 
         <details className="space-y-4 border-t border-slate-100 pt-5">
-          <summary className="cursor-pointer text-base font-semibold text-slate-900">
+          <summary className="cursor-pointer text-lg font-bold text-slate-900">
             确定这次想推进到哪一步（可选进阶）
           </summary>
-          <p className="text-xs text-slate-500">明确目标后，系统会更聚焦地给出下一步建议。</p>
+          <p className="text-xs text-slate-500">明确目标后，这版完整方案会更聚焦，也更方便继续推进。</p>
 
           <div className="grid gap-4 md:grid-cols-2">
             <label className="space-y-2">
@@ -375,7 +378,7 @@ export default function ProjectCreatePage() {
               >
                 <option value="">请选择你这轮最想推进的目标</option>
                 <option value="idea">先完成概念梳理</option>
-                <option value="brief">产出可评审设计简报</option>
+                <option value="brief">产出可继续沟通的设计简报</option>
                 <option value="bom">形成 BOM 草稿</option>
                 <option value="factory">准备对接工厂沟通</option>
               </select>
@@ -390,7 +393,7 @@ export default function ProjectCreatePage() {
               >
                 <option value="">请选择你希望获得的支持方式</option>
                 <option value="none">先独立推进</option>
-                <option value="review">希望获得方案评审建议</option>
+                <option value="review">希望获得方向补充建议</option>
                 <option value="co-create">希望寻找共创合作伙伴</option>
                 <option value="factory-bridge">希望协助对接打样资源</option>
               </select>
@@ -429,10 +432,10 @@ export default function ProjectCreatePage() {
         </details>
 
         <details className="space-y-4 border-t border-slate-100 pt-5">
-          <summary className="cursor-pointer text-base font-semibold text-slate-900">
+          <summary className="cursor-pointer text-lg font-bold text-slate-900">
             补充参考与落地约束（可选进阶）
           </summary>
-          <p className="text-xs text-slate-500">这部分能帮助方案更贴近你真实的执行边界。</p>
+          <p className="text-xs text-slate-500">这部分能帮助方案更贴近真实执行边界，而不只是停留在概念层。</p>
 
           <label className="space-y-2">
             <span className="text-sm font-medium text-slate-700">参考链接</span>
@@ -458,32 +461,32 @@ export default function ProjectCreatePage() {
         </details>
       </form>
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-4">
         <button
           type="button"
           onClick={handleSaveDraft}
           disabled={isSubmitting}
-          className="w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto"
+          className="relative inline-flex items-center justify-center rounded-xl border-2 border-slate-200 bg-white font-bold text-slate-700 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 active:translate-y-1 active:shadow-none disabled:pointer-events-none disabled:opacity-60 w-full px-8 py-3 text-base sm:w-auto"
         >
-          保存草稿
+          先记下这版方向
         </button>
         <button
           type="button"
           onClick={handleGeneratePlan}
           disabled={isSubmitting}
-          className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 sm:w-auto"
+          className="relative inline-flex items-center justify-center rounded-xl bg-amber-400 font-bold text-amber-950 shadow-[0_4px_0_0_#d97706] transition-all duration-200 hover:bg-amber-300 active:translate-y-1 active:shadow-none disabled:pointer-events-none disabled:opacity-60 w-full px-8 py-3 text-base sm:w-auto"
         >
-          提交并生成方案
+          先把这个方向补充完整
         </button>
       </div>
 
       {feedback && (
-        <div className="rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+        <div className="rounded-2xl border-2 border-blue-200 bg-blue-50 px-5 py-4 text-sm font-bold text-blue-900 shadow-sm">
           {feedback}
         </div>
       )}
 
-      <p className="text-xs text-slate-500">
+      <p className="text-sm font-medium text-slate-500">
         说明：当前结果用于前期判断与方案整理，不等同于最终打样或量产结论。
       </p>
     </section>

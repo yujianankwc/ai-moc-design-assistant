@@ -39,15 +39,15 @@ type OriginalForm = {
 };
 
 const modalTitleMap: Record<RequestType, string> = {
-  bom: "BOM 快速校对申请",
-  sampling: "打样可行性评估申请",
-  original: "原创计划评审申请"
+  bom: "补充零件与结构信息",
+  sampling: "补充试做路径信息",
+  original: "补充完整方案路径"
 };
 
 const modalDescMap: Record<RequestType, string> = {
-  bom: "适合先确认零件清单的准确性与可执行性，快速识别明显问题。",
-  sampling: "适合想进入打样前的结构与资源评估，先明确风险与优先级。",
-  original: "适合希望进一步推进原创项目，获得方向评审与下一步建议。"
+  bom: "这一步会帮助继续判断零件结构是否清楚，方便决定这条方向要不要继续往下推进。",
+  sampling: "这一步会帮助继续判断是否适合沿试做路径往下走，先看结构、资源和打样准备度。",
+  original: "这一步会帮助把完整方案路径补充清楚，方便继续沟通结构、目标和后续方向。"
 };
 
 const initialBomForm: BomForm = {
@@ -104,6 +104,8 @@ export default function ServiceRequestModals({
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const recommendationType = useMemo<RequestType>(() => {
+    if (mainRecommendation === "先把这个方向补充完整") return "original";
+    if (mainRecommendation === "去看试做路径") return "sampling";
     if (mainRecommendation === "提交原创计划评审") return "original";
     if (mainRecommendation === "申请打样可行性评估") return "sampling";
     return "bom";
@@ -126,7 +128,7 @@ export default function ServiceRequestModals({
     metadata: Record<string, string | boolean>;
   }) => {
     if (!isUuid(projectId)) {
-      throw new Error("当前为演示项目，暂不支持提交真实申请。请先创建真实项目。");
+      throw new Error("当前还是演示项目，暂时还不能记下这条推进动作。请先创建真实项目。");
     }
 
     const response = await fetch("/api/service-requests", {
@@ -145,13 +147,13 @@ export default function ServiceRequestModals({
 
     const data = (await response.json().catch(() => null)) as { error?: string } | null;
     if (!response.ok) {
-      throw new Error(data?.error ?? "提交失败，请稍后重试。");
+      throw new Error(data?.error ?? "这一步暂时没有记下来，请稍后重试。");
     }
   };
 
   const handleBomSubmit = async () => {
     if (!bomForm.contact || !bomForm.focusQuestion || !bomForm.responseTime || !bomForm.confirmPrice) {
-      setSubmitError("请补充完整信息并确认价格（¥29），这样我们才能继续处理你的申请。");
+      setSubmitError("请把这一步需要的信息补完整，并确认费用（¥29），这样才能继续记下这条推进动作。");
       return;
     }
     setSubmitError("");
@@ -167,9 +169,9 @@ export default function ServiceRequestModals({
           confirm_price: bomForm.confirmPrice
         }
       });
-      setSubmitSuccess("申请已提交并记录，我们会尽快与你联系。");
+      setSubmitSuccess("这一步已经记下来了。后续你可以继续查看当前阶段和下一步建议。");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "提交失败，请稍后重试。";
+      const message = error instanceof Error ? error.message : "这一步暂时没有记下来，请稍后重试。";
       setSubmitError(message);
     } finally {
       setIsSubmitting(false);
@@ -186,7 +188,7 @@ export default function ServiceRequestModals({
       !samplingForm.responseTime ||
       !samplingForm.confirmPrice
     ) {
-      setSubmitError("还有几项信息未填写完整，请补充后再提交（含价格确认 ¥99）。");
+      setSubmitError("还有几项关键信息没补齐，请补充后再继续记下这条试做路径（含费用确认 ¥99）。");
       return;
     }
     setSubmitError("");
@@ -205,9 +207,9 @@ export default function ServiceRequestModals({
           confirm_price: samplingForm.confirmPrice
         }
       });
-      setSubmitSuccess("申请已提交并记录，我们会尽快与你联系。");
+      setSubmitSuccess("试做路径信息已经记下来了。后续可以继续查看这条方向的推进状态。");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "提交失败，请稍后重试。";
+      const message = error instanceof Error ? error.message : "这条试做路径暂时没有记下来，请稍后重试。";
       setSubmitError(message);
     } finally {
       setIsSubmitting(false);
@@ -222,7 +224,7 @@ export default function ServiceRequestModals({
       !originalForm.nextStepGoal ||
       !originalForm.willingToDiscuss
     ) {
-      setSubmitError("请先补充关键信息，便于我们更准确地安排原创计划评审。");
+      setSubmitError("请先补充关键信息，这样才能把完整方案路径说清楚并继续往下推进。");
       return;
     }
     setSubmitError("");
@@ -240,9 +242,9 @@ export default function ServiceRequestModals({
           willing_to_discuss: originalForm.willingToDiscuss
         }
       });
-      setSubmitSuccess("申请已提交并记录，我们会尽快与你联系。");
+      setSubmitSuccess("完整方案路径已经记下来了。后续可以继续查看这条方向的当前建议。");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "提交失败，请稍后重试。";
+      const message = error instanceof Error ? error.message : "完整方案路径暂时没有记下来，请稍后重试。";
       setSubmitError(message);
     } finally {
       setIsSubmitting(false);
@@ -254,9 +256,9 @@ export default function ServiceRequestModals({
 
     try {
       await navigator.clipboard.writeText(markdown);
-      setActionFeedback("已复制项目简报文本");
+      setActionFeedback("这版方向说明已经复制好了");
     } catch {
-      setActionFeedback("复制失败，请手动重试");
+      setActionFeedback("复制暂时失败，请手动重试");
     }
   };
 
@@ -273,9 +275,9 @@ export default function ServiceRequestModals({
       link.click();
       document.body.removeChild(link);
       URL.revokeObjectURL(url);
-      setActionFeedback("已开始下载 Markdown 简报");
+      setActionFeedback("这版方向说明已经开始下载");
     } catch {
-      setActionFeedback("导出失败，请稍后重试");
+      setActionFeedback("导出暂时失败，请稍后重试");
     }
   };
 
@@ -287,14 +289,14 @@ export default function ServiceRequestModals({
           onClick={handleCopyBrief}
           className="w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto"
         >
-          复制文本
+          复制这版方向说明
         </button>
         <button
           type="button"
           onClick={handleDownloadBrief}
           className="w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 sm:w-auto"
         >
-          导出简报（Markdown）
+          导出这版方向说明
         </button>
         <button
           type="button"
@@ -305,7 +307,7 @@ export default function ServiceRequestModals({
           }}
           className={actionButtonClass(recommendationType === "bom")}
         >
-          申请 BOM 快速校对
+          继续补充零件与结构
         </button>
         <button
           type="button"
@@ -316,7 +318,7 @@ export default function ServiceRequestModals({
           }}
           className={actionButtonClass(recommendationType === "sampling")}
         >
-          申请打样可行性评估
+          继续补充试做路径
         </button>
         <button
           type="button"
@@ -327,7 +329,7 @@ export default function ServiceRequestModals({
           }}
           className={actionButtonClass(recommendationType === "original")}
         >
-          提交原创计划评审
+          继续补充完整方案
         </button>
       </div>
 
@@ -347,6 +349,10 @@ export default function ServiceRequestModals({
 
             {!submitSuccess && openType === "bom" && (
               <div className="space-y-3">
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-6 text-slate-600">
+                  <p className="font-semibold text-slate-900">当前动作</p>
+                  <p>先把零件与结构上的关键信息补清楚，方便继续判断这条方向值不值得往下推进。</p>
+                </div>
                 <label className="block space-y-1">
                   <span className={fieldLabelClass}>联系方式 *</span>
                   <input
@@ -372,7 +378,7 @@ export default function ServiceRequestModals({
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className={fieldLabelClass}>希望多久内回复 *</span>
+                  <span className={fieldLabelClass}>你希望多久内收到反馈 *</span>
                   <select
                     value={bomForm.responseTime}
                     onChange={(event) =>
@@ -394,13 +400,17 @@ export default function ServiceRequestModals({
                       setBomForm((prev) => ({ ...prev, confirmPrice: event.target.checked }))
                     }
                   />
-                  我确认本次服务价格为 ¥29 *
+                  我确认这一步的处理费用为 ¥29 *
                 </label>
               </div>
             )}
 
             {!submitSuccess && openType === "sampling" && (
               <div className="space-y-3">
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-6 text-slate-600">
+                  <p className="font-semibold text-slate-900">当前动作</p>
+                  <p>先把试做路径的信息补清楚，方便继续判断这条方向是否适合进入打样前准备。</p>
+                </div>
                 <label className="block space-y-1">
                   <span className={fieldLabelClass}>联系方式 *</span>
                   <input
@@ -414,7 +424,7 @@ export default function ServiceRequestModals({
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className={fieldLabelClass}>项目当前阶段 *</span>
+                  <span className={fieldLabelClass}>当前走到哪一步了 *</span>
                   <select
                     value={samplingForm.projectStage}
                     onChange={(event) =>
@@ -422,10 +432,10 @@ export default function ServiceRequestModals({
                     }
                     className={fieldInputClass}
                   >
-                    <option value="">请选择项目阶段</option>
-                    <option value="idea">概念阶段</option>
-                    <option value="draft">方案草稿阶段</option>
-                    <option value="review">待评审阶段</option>
+                    <option value="">请选择当前阶段</option>
+                    <option value="idea">创意已生成</option>
+                    <option value="draft">方向判断完成</option>
+                    <option value="review">已提交意向</option>
                   </select>
                 </label>
                 <label className="block space-y-1">
@@ -471,7 +481,7 @@ export default function ServiceRequestModals({
                   />
                 </label>
                 <label className="block space-y-1">
-                  <span className={fieldLabelClass}>希望多久内回复 *</span>
+                  <span className={fieldLabelClass}>你希望多久内收到反馈 *</span>
                   <select
                     value={samplingForm.responseTime}
                     onChange={(event) =>
@@ -493,13 +503,17 @@ export default function ServiceRequestModals({
                       setSamplingForm((prev) => ({ ...prev, confirmPrice: event.target.checked }))
                     }
                   />
-                  我确认本次服务价格为 ¥99 *
+                  我确认这一步的处理费用为 ¥99 *
                 </label>
               </div>
             )}
 
             {!submitSuccess && openType === "original" && (
               <div className="space-y-3">
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-xs leading-6 text-slate-600">
+                  <p className="font-semibold text-slate-900">当前动作</p>
+                  <p>先把完整方案路径说清楚，方便继续沟通这个方向的结构、目标和下一步推进方式。</p>
+                </div>
                 <label className="block space-y-1">
                   <span className={fieldLabelClass}>联系方式 *</span>
                   <input
@@ -539,7 +553,7 @@ export default function ServiceRequestModals({
                   </select>
                 </label>
                 <label className="block space-y-1">
-                  <span className={fieldLabelClass}>你更希望这个项目往哪一步走 *</span>
+                  <span className={fieldLabelClass}>你更希望这个项目接下来怎么推进 *</span>
                   <select
                     value={originalForm.nextStepGoal}
                     onChange={(event) =>
@@ -548,8 +562,8 @@ export default function ServiceRequestModals({
                     className={fieldInputClass}
                   >
                     <option value="">请选择</option>
-                    <option value="review">先完成方案评审</option>
-                    <option value="sampling">尽快进入打样评估</option>
+                    <option value="review">先把完整方案补清楚</option>
+                    <option value="sampling">先进入试做路径判断</option>
                     <option value="refine">先补齐设计细节再推进</option>
                   </select>
                 </label>
@@ -610,7 +624,7 @@ export default function ServiceRequestModals({
                   disabled={isSubmitting}
                   className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 sm:w-auto"
                 >
-                  {isSubmitting ? "提交中..." : "提交申请"}
+                  {isSubmitting ? "正在记下这一步..." : "记下这条推进动作"}
                 </button>
               )}
               {!submitSuccess && openType === "sampling" && (
@@ -620,7 +634,7 @@ export default function ServiceRequestModals({
                   disabled={isSubmitting}
                   className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 sm:w-auto"
                 >
-                  {isSubmitting ? "提交中..." : "提交申请"}
+                  {isSubmitting ? "正在记下这一步..." : "记下试做路径信息"}
                 </button>
               )}
               {!submitSuccess && openType === "original" && (
@@ -630,7 +644,7 @@ export default function ServiceRequestModals({
                   disabled={isSubmitting}
                   className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 sm:w-auto"
                 >
-                  {isSubmitting ? "提交中..." : "提交申请"}
+                  {isSubmitting ? "正在记下这一步..." : "记下完整方案路径"}
                 </button>
               )}
             </div>

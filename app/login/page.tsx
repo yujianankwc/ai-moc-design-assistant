@@ -43,36 +43,42 @@ export default function LoginPage() {
   };
 
   return (
-    <section className="mx-auto max-w-md space-y-5 sm:space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">登录</h1>
-        <p className="text-sm text-slate-600">请输入内测邀请码后进入系统。未登录无法访问功能页。</p>
+    <section className="mx-auto max-w-md space-y-6 pt-10">
+      <div className="space-y-3 text-center sm:text-left">
+        <p className="inline-flex items-center rounded-full border-2 border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
+          AI积木设计师 · 体验入口
+        </p>
+        <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">登录</h1>
+        <p className="text-sm font-medium text-slate-600">请输入内测邀请码后进入系统。未登录无法访问功能页。</p>
       </div>
 
-      <form onSubmit={handleLogin} className="space-y-4 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
-        <label className="block space-y-2">
-          <span className="text-sm font-medium text-slate-700">邀请码</span>
+      <form
+        onSubmit={handleLogin}
+        className="space-y-5 rounded-[28px] border-2 border-amber-100 bg-white p-6 shadow-[0_10px_30px_-18px_rgba(217,119,6,0.35)] sm:p-8"
+      >
+        <label className="block space-y-3">
+          <span className="text-sm font-bold text-slate-800">邀请码</span>
           <input
             type="text"
             value={inviteCode}
             onChange={(event) => setInviteCode(event.target.value)}
             placeholder="例如：MOC-BETA-9X2Q7K"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm uppercase outline-none ring-blue-500 focus:ring-2"
+            className="w-full rounded-2xl border-2 border-slate-200 px-4 py-3 text-sm font-bold uppercase tracking-wider outline-none transition-all focus:border-amber-400 focus:ring-4 focus:ring-amber-400/20"
           />
         </label>
 
-        {error ? <p className="text-xs text-rose-600">{error}</p> : null}
+        {error ? <p className="text-xs font-bold text-rose-600">{error}</p> : null}
 
         <button
           type="submit"
           disabled={isSubmitting}
-          className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-60"
+          className="relative inline-flex w-full items-center justify-center rounded-2xl border border-amber-300 bg-amber-400 px-5 py-3 text-base font-extrabold tracking-wide text-amber-950 shadow-[0_6px_0_0_#d97706] transition-all duration-200 hover:bg-amber-300 active:translate-y-1 active:shadow-[0_2px_0_0_#d97706] disabled:pointer-events-none disabled:opacity-60"
         >
           {isSubmitting ? "验证中..." : "验证邀请码并进入"}
         </button>
       </form>
 
-      <p className="text-xs text-slate-500">邀请码可由运营后台统一发放，支持你后续按批次更换。</p>
+      <p className="text-center text-xs font-medium text-slate-500 sm:text-left">邀请码可由运营后台统一发放，支持你后续按批次更换。</p>
     </section>
   );
 }

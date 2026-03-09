@@ -4,6 +4,7 @@ import { getSupabaseServerClient } from "@/lib/supabase-server";
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10 MB
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 const BUCKET = "reference-images";
+const SIGNED_URL_EXPIRES_SECONDS = 60 * 60 * 24 * 14;
 
 function extFromMime(mime: string) {
   if (mime === "image/png") return "png";
@@ -59,11 +60,19 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: publicUrlData } = supabase.storage
+    const { data: signedUrlData, error: signedUrlError } = await supabase.storage
       .from(BUCKET)
-      .getPublicUrl(filePath);
+      .createSignedUrl(filePath, SIGNED_URL_EXPIRES_SECONDS);
 
-    return NextResponse.json({ url: publicUrlData.publicUrl });
+    if (signedUrlError || !signedUrlData?.signedUrl) {
+      console.error("[upload-reference] signed url error:", signedUrlError?.message || "missing signed url");
+      return NextResponse.json(
+        { error: "参考图已经上传，但暂时没法继续使用，请稍后重试。" },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ url: signedUrlData.signedUrl });
   } catch (error) {
     const message = error instanceof Error ? error.message : "参考图上传失败";
     console.error("[upload-reference] unexpected error:", message);

@@ -17,9 +17,11 @@ npm run dev
    - `supabase/migrations/0002_mvp_project_outputs.sql`
    - `supabase/migrations/0003_mvp_service_requests.sql`
    - `supabase/migrations/0004_projects_status_closure.sql`
+   - `supabase/migrations/0007_intent_quote_mvp.sql`
 3. Copy `.env.example` to `.env.local` and fill:
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
+   - `ADMIN_API_TOKEN` (optional, required only when you want to protect `/api/admin/*` intent/quote endpoints)
    - `AI_API_KEY`
    - `AI_IMAGE_API_KEY` (optional, defaults to `AI_API_KEY`; use dedicated image provider key if needed)
    - `AI_MODEL`
@@ -38,6 +40,19 @@ npm run dev
    - `AI_IMAGE_DEFAULT_ALIAS` (optional, `default` / `nano_banner` / `nano_banana`; controls default image model selection)
    - `AI_IMAGE_SIZE` (optional, default `2048x2048`; required by some image models)
    - `SCENIC_5A_CSV_PATH` (optional, path to 5A scenic dataset csv; used to anchor scenic idea generation)
+
+## Intent / Quote admin console (MVP)
+
+1. Ensure migration `0007_intent_quote_mvp.sql` is applied.
+2. If you set `ADMIN_API_TOKEN` in `.env.local`, keep it handy.
+3. Open `/admin/intents` locally.
+4. Paste token in page input and click `保存 Token`.
+5. You can now:
+   - Query intents by status/source/keyword
+   - Open detail
+   - Update intent status
+   - Append followups
+   - Create draft quote sheets
 
 ## Scenic knowledge dataset (optional but recommended)
 

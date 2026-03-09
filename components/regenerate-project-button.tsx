@@ -53,10 +53,10 @@ export default function RegenerateProjectButton({ projectId, currentSnapshot }: 
         | null;
 
       if (!response.ok) {
-        throw new Error(data?.error ?? "重新生成失败，请稍后重试。");
+        throw new Error(data?.error ?? "这版方向暂时没有重新整理出来，请稍后重试。");
       }
 
-      const successText = mode ? successMessageMap[mode] : "已重新生成最新方案。";
+      const successText = mode ? successMessageMap[mode] : "这版方向已经重新整理好了。";
       setMessage(successText);
       setIsError(false);
       saveCurrentModeLabel(projectId, modeToLabel(mode ?? "default"));
@@ -66,7 +66,7 @@ export default function RegenerateProjectButton({ projectId, currentSnapshot }: 
         router.refresh();
       }, 600);
     } catch (error) {
-      const errorText = error instanceof Error ? error.message : "重新生成失败，请稍后重试。";
+      const errorText = error instanceof Error ? error.message : "这版方向暂时没有重新整理出来，请稍后重试。";
       setMessage(errorText);
       setIsError(true);
     } finally {
@@ -85,7 +85,7 @@ export default function RegenerateProjectButton({ projectId, currentSnapshot }: 
           disabled={isLoading}
           className="w-full rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
         >
-          {loadingMode === "default" ? "生成中..." : "重新生成项目方案"}
+          {loadingMode === "default" ? "正在整理这版方向..." : "重新整理这版方向"}
         </button>
         {(Object.keys(modeLabelMap) as GenerationMode[]).map((mode) => (
           <button
@@ -95,7 +95,7 @@ export default function RegenerateProjectButton({ projectId, currentSnapshot }: 
             disabled={isLoading}
             className="w-full rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-70 sm:w-auto"
           >
-            {loadingMode === mode ? "生成中..." : modeLabelMap[mode]}
+            {loadingMode === mode ? "正在整理..." : modeLabelMap[mode]}
           </button>
         ))}
       </div>
