@@ -15,7 +15,15 @@ import {
   updateQuickAIImageInSession
 } from "@/lib/quick-entry";
 import { buildQuickPathHref } from "@/lib/quick-path-context";
-import type { QuickDirection, QuickEntryInput, QuickPath, QuickScalePreference, QuickStyle } from "@/types/quick-entry";
+import type {
+  QuickDirection,
+  QuickEntryInput,
+  QuickImageModelAlias,
+  QuickImageStatus,
+  QuickPath,
+  QuickScalePreference,
+  QuickStyle
+} from "@/types/quick-entry";
 
 function clampText(value: string | undefined, maxChars: number) {
   const text = (value || "").trim();
@@ -25,9 +33,32 @@ function clampText(value: string | undefined, maxChars: number) {
   return `${chars.slice(0, maxChars).join("")}…`;
 }
 
-const IMAGE_AUTO_RETRY_DELAYS_MS = [5000, 8000, 12000, 15000, 15000] as const;
 const AUTO_REQUEST_DEDUP_TTL_MS = 120_000;
 const recentAutoImageRequestMap = new Map<string, number>();
+
+const IMAGE_POLL_INTERVAL_MS = 15_000;
+
+function parseClientSeconds(rawValue: string | undefined, fallback: number) {
+  const parsed = Number(rawValue);
+  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
+  return Math.round(parsed);
+}
+
+const IMAGE_WAIT_SECONDS = parseClientSeconds(process.env.NEXT_PUBLIC_IMAGE_WAIT_SECONDS, 30);
+const IMAGE_RETRY_SECONDS = Math.max(
+  IMAGE_WAIT_SECONDS,
+  parseClientSeconds(process.env.NEXT_PUBLIC_IMAGE_RETRY_SECONDS, 90)
+);
+
+type QuickProjectImageSnapshot = {
+  previewImageUrl: string | null;
+  imageWarning: string;
+  imageStatus: QuickImageStatus;
+  imageUpdatedAt: string | null;
+  imageLastError: string;
+  imageAttemptCount: number;
+  imageModelAlias: QuickImageModelAlias | null;
+};
 
 function wasAutoImageRequestedRecently(key: string) {
   const now = Date.now();
@@ -124,8 +155,11 @@ export default function QuickEntryResultPage() {
   const searchParams = useMemo(() => new URLSearchParams(rawSearch), [rawSearch]);
   const quickProjectIdFromQuery = searchParams.get("quickProjectId")?.trim() ?? "";
   const [imageUrl, setImageUrl] = useState<string | null>(null);
-  const [imageState, setImageState] = useState<"idle" | "generating" | "failed">("idle");
-  const [, setImageMessage] = useState("");
+  const [imageStatus, setImageStatus] = useState<QuickImageStatus>("idle");
+  const [imageError, setImageError] = useState("");
+  const [imageUpdatedAt, setImageUpdatedAt] = useState<string | null>(null);
+  const [imageAttemptCount, setImageAttemptCount] = useState(0);
+  const [, setImageModelAlias] = useState<QuickImageModelAlias | null>(null);
   const [imageInfoHint, setImageInfoHint] = useState("");
   const [resultState, setResultState] = useState<"idle" | "generating" | "failed">("idle");
   const [quickProjectId, setQuickProjectId] = useState(quickProjectIdFromQuery);
@@ -139,13 +173,10 @@ export default function QuickEntryResultPage() {
   const [lightboxZoom, setLightboxZoom] = useState(1);
   const [imageProgress, setImageProgress] = useState(8);
   const [imageElapsedSeconds, setImageElapsedSeconds] = useState(0);
-  const [hasTriedImageGeneration, setHasTriedImageGeneration] = useState(false);
   const [referenceImageWasDropped, setReferenceImageWasDropped] = useState(false);
   const autoRequestedKeyRef = useRef("");
   const imageAutoRequestedKeyRef = useRef("");
   const imageRequestSeqRef = useRef(0);
-  const imageRetryCountRef = useRef(0);
-  const imageRetryTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     setRawSearch(window.location.search);
@@ -210,6 +241,18 @@ export default function QuickEntryResultPage() {
     }
   }, [result]);
 
+  const syncImageSnapshot = useCallback((snapshot: Partial<QuickProjectImageSnapshot>) => {
+    setImageUrl(snapshot.previewImageUrl ?? null);
+    setImageStatus(
+      snapshot.imageStatus ??
+        (snapshot.previewImageUrl ? "succeeded" : snapshot.imageWarning || snapshot.imageLastError ? "failed" : "idle")
+    );
+    setImageError(snapshot.imageLastError ?? snapshot.imageWarning ?? "");
+    setImageUpdatedAt(snapshot.imageUpdatedAt ?? null);
+    setImageAttemptCount(snapshot.imageAttemptCount ?? 0);
+    setImageModelAlias(snapshot.imageModelAlias ?? null);
+  }, []);
+
   useEffect(() => {
     if (!quickProjectId) {
       setDbLoading(false);
@@ -229,6 +272,11 @@ export default function QuickEntryResultPage() {
                 result: ReturnType<typeof buildQuickEntryResult>;
                 previewImageUrl: string | null;
                 imageWarning: string;
+                imageStatus: QuickImageStatus;
+                imageUpdatedAt: string | null;
+                imageLastError: string;
+                imageAttemptCount: number;
+                imageModelAlias: QuickImageModelAlias | null;
               };
               error?: string;
             }
@@ -241,20 +289,8 @@ export default function QuickEntryResultPage() {
         setOverrideInput(null);
         setDbResult(data.quickProject.result);
         setResolvedResult(data.quickProject.result);
-        setImageUrl(data.quickProject.previewImageUrl ?? null);
-        if (data.quickProject.previewImageUrl) {
-          setImageState("idle");
-          setImageMessage("");
-          setImageInfoHint("");
-        } else if (data.quickProject.imageWarning) {
-          setImageState("failed");
-          setImageMessage(data.quickProject.imageWarning);
-          setImageInfoHint("");
-        } else {
-          setImageState("idle");
-          setImageMessage("");
-          setImageInfoHint("");
-        }
+        syncImageSnapshot(data.quickProject);
+        setImageInfoHint("");
         setDbLoading(false);
       })
       .catch((error) => {
@@ -267,7 +303,7 @@ export default function QuickEntryResultPage() {
     return () => {
       cancelled = true;
     };
-  }, [quickProjectId]);
+  }, [quickProjectId, syncImageSnapshot]);
 
   const previewImageUrl = useMemo(() => {
     if (source === "ai" && aiSession?.previewImageUrl) {
@@ -284,57 +320,80 @@ export default function QuickEntryResultPage() {
     [effectiveInput]
   );
 
-  const requestTextResult = useCallback(async (targetInput: QuickEntryInput, opts?: { manual?: boolean }) => {
-    setResultState("generating");
+  const requestTextResult = useCallback(
+    async (targetInput: QuickEntryInput, opts?: { manual?: boolean }) => {
+      setResultState("generating");
 
-    try {
-      const response = await fetch("/api/quick/generate", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          idea: targetInput.idea,
-          direction: targetInput.direction,
-          style: targetInput.style,
-          scale: targetInput.scale,
-          referenceImage: targetInput.referenceImage,
-          correctionIntent: targetInput.correctionIntent,
-          quickProjectId: quickProjectId || undefined,
-          regenerateToken: opts?.manual ? String(Date.now()) : undefined
-        })
-      });
-      const data = (await response.json().catch(() => null)) as
-        | {
-            input?: QuickEntryInput;
-            result?: typeof resolvedResult;
-            textWarning?: string;
-            quickProjectId?: string;
-            error?: string;
-          }
-        | null;
-      if (!response.ok || !data?.input || !data?.result) {
-        throw new Error(data?.error ?? "文字判断生成失败，请稍后重试。");
-      }
+      try {
+        const response = await fetch("/api/quick/generate", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            idea: targetInput.idea,
+            direction: targetInput.direction,
+            style: targetInput.style,
+            scale: targetInput.scale,
+            referenceImage: targetInput.referenceImage,
+            correctionIntent: targetInput.correctionIntent,
+            quickProjectId: quickProjectId || undefined,
+            regenerateToken: opts?.manual ? String(Date.now()) : undefined
+          })
+        });
+        const data = (await response.json().catch(() => null)) as
+          | {
+              input?: QuickEntryInput;
+              result?: typeof resolvedResult;
+              textWarning?: string;
+              quickProjectId?: string;
+              error?: string;
+            }
+          | null;
+        if (!response.ok || !data?.input || !data?.result) {
+          throw new Error(data?.error ?? "文字判断生成失败，请稍后重试。");
+        }
 
-      setResolvedResult(data.result);
-      setResultState("idle");
-      if (data.quickProjectId) {
-        setQuickProjectId(data.quickProjectId);
+        setResolvedResult(data.result);
+        setResultState("idle");
+        syncImageSnapshot({
+          previewImageUrl: null,
+          imageWarning: "",
+          imageStatus: "idle",
+          imageLastError: "",
+          imageUpdatedAt: null,
+          imageAttemptCount: 0,
+          imageModelAlias: null
+        });
+        if (data.quickProjectId) {
+          setQuickProjectId(data.quickProjectId);
+        }
+        saveQuickAIResultToSession({
+          input: data.input,
+          result: data.result,
+          previewImageUrl: null,
+          imageWarning: "",
+          imageStatus: "idle",
+          imageLastError: "",
+          imageUpdatedAt: null,
+          imageAttemptCount: 0,
+          imageModelAlias: null
+        });
+        return {
+          input: data.input,
+          result: data.result,
+          quickProjectId: data.quickProjectId?.trim() || quickProjectId || ""
+        };
+      } catch {
+        setResultState("failed");
+        if (!resolvedResult && fallbackResult) {
+          setResolvedResult(fallbackResult);
+        }
+        return null;
       }
-      saveQuickAIResultToSession({
-        input: data.input,
-        result: data.result,
-        previewImageUrl: null,
-        imageWarning: ""
-      });
-    } catch {
-      setResultState("failed");
-      if (!resolvedResult && fallbackResult) {
-        setResolvedResult(fallbackResult);
-      }
-    }
-  }, [fallbackResult, quickProjectId, resolvedResult]);
+    },
+    [fallbackResult, quickProjectId, resolvedResult, syncImageSnapshot]
+  );
 
   useEffect(() => {
     const shouldGenerateText =
@@ -361,20 +420,29 @@ export default function QuickEntryResultPage() {
 
   useEffect(() => {
     if (!previewImageUrl) return;
-    setImageUrl(previewImageUrl);
-    setImageState("idle");
-    setImageMessage("");
+    syncImageSnapshot({
+      previewImageUrl,
+      imageStatus: aiSession?.imageStatus ?? "succeeded",
+      imageWarning: "",
+      imageLastError: aiSession?.imageLastError ?? "",
+      imageUpdatedAt: aiSession?.imageUpdatedAt ?? null,
+      imageAttemptCount: aiSession?.imageAttemptCount ?? 0,
+      imageModelAlias: aiSession?.imageModelAlias ?? null
+    });
     setImageInfoHint("");
-  }, [previewImageUrl]);
+  }, [aiSession, previewImageUrl, syncImageSnapshot]);
 
   useEffect(() => {
-    if (!hasTriedImageGeneration || imageUrl) {
+    const isImageGenerating = (imageStatus === "queued" || imageStatus === "generating") && !imageUrl;
+    if (!isImageGenerating) {
       setImageProgress((prev) => (prev >= 100 ? 100 : 5));
       setImageElapsedSeconds(0);
       return;
     }
-    const progressTimer = window.setInterval(() => {
-      setImageElapsedSeconds((prev) => prev + 1);
+    const updateProgress = () => {
+      const startedAtMs = imageUpdatedAt ? new Date(imageUpdatedAt).getTime() : Date.now();
+      const elapsedSeconds = Math.max(0, Math.floor((Date.now() - startedAtMs) / 1000));
+      setImageElapsedSeconds(elapsedSeconds);
       setImageProgress((prev) => {
         if (prev >= 92) return 92;
         if (prev < 40) return Math.min(prev + 0.65, 40);
@@ -382,42 +450,59 @@ export default function QuickEntryResultPage() {
         if (prev < 90) return Math.min(prev + 0.1, 90);
         return Math.min(prev + 0.03, 92);
       });
+    };
+    updateProgress();
+    const progressTimer = window.setInterval(() => {
+      updateProgress();
     }, 1000);
     return () => {
       window.clearInterval(progressTimer);
     };
-  }, [hasTriedImageGeneration, imageUrl]);
+  }, [imageStatus, imageUpdatedAt, imageUrl]);
 
-  const imageStateRef = useRef(imageState);
-  imageStateRef.current = imageState;
+  const imageStatusRef = useRef(imageStatus);
+  imageStatusRef.current = imageStatus;
   const imageUrlRef = useRef(imageUrl);
   imageUrlRef.current = imageUrl;
 
-  // Poll DB every 15s while waiting for image generation.
-  // Handles reverse-proxy timeouts: the backend persists the image to DB, but
-  // the long-running fetch response never reaches the browser.
-  const IMAGE_POLL_INTERVAL_MS = 15_000;
   useEffect(() => {
-    if (!quickProjectId || !hasTriedImageGeneration || imageUrl) return;
+    if (!quickProjectId) return;
+    if (imageStatus !== "queued" && imageStatus !== "generating") return;
     const poll = async () => {
       try {
         const res = await fetch(`/api/quick/projects/${quickProjectId}`);
         if (!res.ok) return;
         const data = (await res.json().catch(() => null)) as
-          | { quickProject?: { previewImageUrl?: string | null } }
+          | {
+              quickProject?: QuickProjectImageSnapshot;
+            }
           | null;
-        const dbUrl = data?.quickProject?.previewImageUrl;
-        if (dbUrl && !imageUrlRef.current) {
-          setImageUrl(dbUrl);
-          setImageState("idle");
+        if (!data?.quickProject) return;
+        const nextSnapshot = data.quickProject;
+        syncImageSnapshot(nextSnapshot);
+        if (nextSnapshot.previewImageUrl && !imageUrlRef.current) {
           setImageProgress(100);
-          setImageMessage("");
           setImageInfoHint("");
           imageRequestSeqRef.current += 1;
           updateQuickAIImageInSession({
             idea: effectiveInput?.idea ?? "",
-            previewImageUrl: dbUrl,
-            imageWarning: ""
+            previewImageUrl: nextSnapshot.previewImageUrl,
+            imageWarning: nextSnapshot.imageWarning,
+            imageStatus: nextSnapshot.imageStatus,
+            imageLastError: nextSnapshot.imageLastError,
+            imageUpdatedAt: nextSnapshot.imageUpdatedAt,
+            imageAttemptCount: nextSnapshot.imageAttemptCount,
+            imageModelAlias: nextSnapshot.imageModelAlias
+          });
+        } else if (nextSnapshot.imageStatus === "failed") {
+          updateQuickAIImageInSession({
+            idea: effectiveInput?.idea ?? "",
+            imageWarning: nextSnapshot.imageWarning,
+            imageStatus: nextSnapshot.imageStatus,
+            imageLastError: nextSnapshot.imageLastError,
+            imageUpdatedAt: nextSnapshot.imageUpdatedAt,
+            imageAttemptCount: nextSnapshot.imageAttemptCount,
+            imageModelAlias: nextSnapshot.imageModelAlias
           });
         }
       } catch {
@@ -426,32 +511,31 @@ export default function QuickEntryResultPage() {
     };
     const timer = window.setInterval(poll, IMAGE_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [quickProjectId, hasTriedImageGeneration, imageUrl, effectiveInput]);
-
-  const clearImageRetryTimer = useCallback(() => {
-    if (imageRetryTimerRef.current !== null) {
-      window.clearTimeout(imageRetryTimerRef.current);
-      imageRetryTimerRef.current = null;
-    }
-  }, []);
-
-  useEffect(() => () => clearImageRetryTimer(), [clearImageRetryTimer]);
+  }, [effectiveInput, imageStatus, quickProjectId, syncImageSnapshot]);
 
   const requestImageResult = useCallback(
-    async (targetInput: QuickEntryInput, opts?: { manual?: boolean; preserveProgress?: boolean }) => {
+    async (targetInput: QuickEntryInput, opts?: { manual?: boolean; projectIdOverride?: string }) => {
+      const targetQuickProjectId = opts?.projectIdOverride?.trim() || quickProjectId;
+      if (!targetQuickProjectId) {
+        setImageStatus("failed");
+        setImageError("当前项目还没准备好，请稍后再试一次。");
+        setImageInfoHint("");
+        return;
+      }
+      if (targetQuickProjectId !== quickProjectId) {
+        setQuickProjectId(targetQuickProjectId);
+      }
       const requestSeq = ++imageRequestSeqRef.current;
-      if (!opts?.preserveProgress) {
-        imageRetryCountRef.current = 0;
-        clearImageRetryTimer();
-      }
-      setHasTriedImageGeneration(true);
-      setImageState("generating");
-      setImageMessage("预览图正在整理中，请稍候...");
+      const startedAt = new Date().toISOString();
+      const nextAttempt = imageAttemptCount + 1;
+      setReferenceImageWasDropped(false);
+      setImageStatus("generating");
+      setImageError("");
+      setImageUpdatedAt(startedAt);
+      setImageAttemptCount(nextAttempt);
       setImageInfoHint("");
-      if (!opts?.preserveProgress) {
-        setImageProgress(8);
-        setImageElapsedSeconds(0);
-      }
+      setImageProgress(8);
+      setImageElapsedSeconds(0);
       try {
         const response = await fetch("/api/quick/generate-image", {
           method: "POST",
@@ -465,33 +549,46 @@ export default function QuickEntryResultPage() {
             scale: targetInput.scale,
             referenceImage: targetInput.referenceImage,
             correctionIntent: targetInput.correctionIntent,
-            quickProjectId: quickProjectId || undefined,
+            quickProjectId: targetQuickProjectId,
             regenerateToken: opts?.manual ? String(Date.now()) : undefined
           })
         });
         const data = (await response.json().catch(() => null)) as
           | {
+              status?: QuickImageStatus;
               previewImageUrl?: string | null;
+              message?: string;
               usedFallbackToDefault?: boolean;
               usedReferenceImage?: boolean;
               referenceImageDropped?: boolean;
               persistedToProject?: boolean;
-              error?: string;
               retryable?: boolean;
             }
           | null;
-        if (!response.ok || !data?.previewImageUrl) {
-          const apiError = new Error(data?.error ?? "当前结果正在整理中，你可以稍后去项目列表继续查看。") as Error & { retryable?: boolean };
-          apiError.retryable = Boolean(data?.retryable);
-          throw apiError;
-        }
         if (requestSeq !== imageRequestSeqRef.current) return;
-        clearImageRetryTimer();
-        imageRetryCountRef.current = 0;
+        if (!response.ok || data?.status !== "succeeded" || !data?.previewImageUrl) {
+          const failedMessage = data?.message ?? "这次预览图还没整理出来，请再试一次。";
+          setImageUrl(null);
+          setImageStatus("failed");
+          setImageError(failedMessage);
+          setImageUpdatedAt(new Date().toISOString());
+          setImageInfoHint("");
+          setImageProgress(100);
+          updateQuickAIImageInSession({
+            idea: targetInput.idea,
+            imageWarning: failedMessage,
+            imageStatus: "failed",
+            imageLastError: failedMessage,
+            imageUpdatedAt: new Date().toISOString(),
+            imageAttemptCount: nextAttempt
+          });
+          return;
+        }
         setImageUrl(data.previewImageUrl);
-        setImageState("idle");
+        setImageStatus("succeeded");
+        setImageError("");
         setImageProgress(100);
-        setImageMessage("");
+        setImageUpdatedAt(new Date().toISOString());
         setReferenceImageWasDropped(Boolean(data.referenceImageDropped));
         const messageParts: string[] = [];
         if (data.referenceImageDropped) {
@@ -502,27 +599,15 @@ export default function QuickEntryResultPage() {
         if (!data.referenceImageDropped && data.usedFallbackToDefault) {
           messageParts.push("排队设计的人有点多，已经换了一位设计师帮你搞定。");
         }
-        if (quickProjectId && !data.persistedToProject) {
-          messageParts.push("图片已生成，正在同步到项目列表。");
-        }
         setImageInfoHint(messageParts.join(" "));
-        if (quickProjectId && !data.persistedToProject) {
-          void fetch(`/api/quick/projects/${quickProjectId}`, {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify({
-              idea: targetInput.idea,
-              previewImageUrl: data.previewImageUrl,
-              imageWarning: ""
-            })
-          });
-        }
         updateQuickAIImageInSession({
           idea: targetInput.idea,
           previewImageUrl: data.previewImageUrl,
-          imageWarning: ""
+          imageWarning: "",
+          imageStatus: "succeeded",
+          imageLastError: "",
+          imageUpdatedAt: new Date().toISOString(),
+          imageAttemptCount: nextAttempt
         });
       } catch (error) {
         if (requestSeq !== imageRequestSeqRef.current) return;
@@ -531,37 +616,24 @@ export default function QuickEntryResultPage() {
             ? error.message
             : typeof error === "object" && error !== null && "message" in error
               ? String((error as { message: unknown }).message)
-              : "当前结果正在整理中，你可以稍后去项目列表继续查看。";
-        const retryable = Boolean(
-          error instanceof Error &&
-            "retryable" in error &&
-            (error as Error & { retryable?: boolean }).retryable
-        );
-        const nextDelay = IMAGE_AUTO_RETRY_DELAYS_MS[imageRetryCountRef.current];
-        if (retryable && typeof nextDelay === "number") {
-          imageRetryCountRef.current += 1;
-          const retryRound = imageRetryCountRef.current;
-          setImageState("generating");
-          setImageMessage("");
-          setImageInfoHint(`大家都在设计积木，AI 设计师正在第 ${retryRound} 次排队中...`);
-          clearImageRetryTimer();
-          imageRetryTimerRef.current = window.setTimeout(() => {
-            void requestImageResult(targetInput, { preserveProgress: true });
-          }, nextDelay);
-          return;
-        }
-        clearImageRetryTimer();
+              : "这次预览图还没整理出来，请再试一次。";
+        setImageUrl(null);
+        setImageStatus("failed");
+        setImageError(message);
+        setImageUpdatedAt(new Date().toISOString());
         setImageInfoHint("");
-        setImageState("failed");
         setImageProgress(100);
-        setImageMessage(message);
         updateQuickAIImageInSession({
           idea: targetInput.idea,
-          imageWarning: message
+          imageWarning: message,
+          imageStatus: "failed",
+          imageLastError: message,
+          imageUpdatedAt: new Date().toISOString(),
+          imageAttemptCount: nextAttempt
         });
       }
     },
-    [clearImageRetryTimer, quickProjectId]
+    [imageAttemptCount, quickProjectId]
   );
 
   useEffect(() => {
@@ -569,13 +641,15 @@ export default function QuickEntryResultPage() {
       source !== "ai" ||
       !effectiveInput?.idea ||
       !resolvedResult ||
-      resultState === "generating"
+      resultState === "generating" ||
+      !quickProjectId
     ) return;
-    if (imageStateRef.current === "generating" || imageUrlRef.current || previewImageUrl) return;
+    if (imageStatusRef.current === "queued" || imageStatusRef.current === "generating" || imageUrlRef.current || previewImageUrl) return;
+    if (imageStatusRef.current !== "idle") return;
 
     const requestKey = [
-      "image-refresh-v2",
-      quickProjectId || "no-project",
+      "image-refresh-v3",
+      quickProjectId,
       effectiveInput.idea.trim(),
       effectiveInput.direction,
       effectiveInput.style,
@@ -589,34 +663,7 @@ export default function QuickEntryResultPage() {
 
     void requestImageResult(effectiveInput);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [effectiveInput, previewImageUrl, quickProjectId, resolvedResult, resultState, source]);
-
-  useEffect(() => {
-    if (
-      source === "ai" ||
-      !effectiveInput?.idea ||
-      !dbResult ||
-      dbLoading ||
-      imageStateRef.current === "generating" ||
-      imageUrlRef.current
-    ) {
-      return;
-    }
-    const requestKey = [
-      "image-db-retry-v1",
-      effectiveInput.idea.trim(),
-      effectiveInput.direction,
-      effectiveInput.style,
-      effectiveInput.scale,
-      effectiveInput.referenceImage.trim(),
-      effectiveInput.correctionIntent?.trim() || ""
-    ].join("|");
-    if (imageAutoRequestedKeyRef.current === requestKey) return;
-    imageAutoRequestedKeyRef.current = requestKey;
-
-    void requestImageResult(effectiveInput);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dbLoading, dbResult, effectiveInput, source]);
+  }, [effectiveInput, imageStatus, previewImageUrl, quickProjectId, requestImageResult, resolvedResult, resultState, source]);
 
   const shouldBlockForDbLoading = dbLoading && !effectiveInput && !resolvedResult;
   if (shouldBlockForDbLoading) {
@@ -650,21 +697,25 @@ export default function QuickEntryResultPage() {
   const projectNextSuggestion = inferNextSuggestionFromJudgement(projectJudgement);
   const primaryPath: QuickPath = projectNextSuggestion === "生成完整方案" ? "professional_upgrade" : "small_batch";
   const primaryCtaLabel = primaryPath === "professional_upgrade" ? "继续完善这个方向" : "先下单试做";
-  const showProjectListLink = imageElapsedSeconds >= 20 || imageState === "failed";
-  const showThreeMinuteGuidance = imageElapsedSeconds >= 180 || imageState === "failed";
+  const isImageGenerating = (imageStatus === "queued" || imageStatus === "generating") && !imageUrl;
+  const hasTimedOutWaiting = isImageGenerating && imageElapsedSeconds >= IMAGE_RETRY_SECONDS;
+  const shouldShowFailedCard = (!imageUrl && imageStatus === "failed") || hasTimedOutWaiting;
+  const showProjectListLink = imageElapsedSeconds >= IMAGE_WAIT_SECONDS || shouldShowFailedCard;
+  const showThreeMinuteGuidance = imageElapsedSeconds >= IMAGE_RETRY_SECONDS || shouldShowFailedCard;
   const imageStageMessage = (() => {
-    if (imageInfoHint && imageState !== "failed") return imageInfoHint;
-    if (imageElapsedSeconds < 30) return "正在准备画面，请稍候。";
-    if (imageElapsedSeconds < 90) return "正在拼搭主体结构。";
-    if (imageElapsedSeconds < 180) return "正在补细节与光影。";
+    if (imageInfoHint && !shouldShowFailedCard) return imageInfoHint;
+    if (imageElapsedSeconds < Math.min(30, IMAGE_WAIT_SECONDS)) return "正在准备画面，请稍候。";
+    if (imageElapsedSeconds < Math.min(90, IMAGE_RETRY_SECONDS)) return "正在拼搭主体结构。";
+    if (imageElapsedSeconds < IMAGE_RETRY_SECONDS) return "正在补细节与光影。";
     return "结果还在整理中，可先去项目列表稍后查看。";
   })();
-  const imageFromDbMissing = !imageUrl && !hasTriedImageGeneration && Boolean(dbResult) && !dbLoading;
+  const shouldShowIdleImageCard = !imageUrl && imageStatus === "idle" && !dbLoading && Boolean(resolvedResult || fallbackResult);
+  const imageFailureMessage = imageError || "这次预览图还没整理出来，你可以马上再试一次。";
   const displayTopJudgement = clampText(
     resolvedResult?.topJudgement || fallbackResult?.topJudgement || "结果正在整理中，请稍候...",
     42
   );
-  const isWaitingPrimaryView = hasTriedImageGeneration && !imageUrl && !imageFromDbMissing;
+  const isWaitingPrimaryView = isImageGenerating && !hasTimedOutWaiting && !imageUrl && !shouldShowIdleImageCard;
 
   const goQuickPath = (path: QuickPath) => {
     const context = {
@@ -699,7 +750,7 @@ export default function QuickEntryResultPage() {
       }
     }, 300);
   };
-  const handleQuickCorrection = (intent: string) => {
+  const handleQuickCorrection = async (intent: string) => {
     if (!effectiveInput) return;
     const correctedInput: QuickEntryInput = {
       ...effectiveInput,
@@ -708,11 +759,18 @@ export default function QuickEntryResultPage() {
     setActiveCorrection(intent);
     setOverrideInput(correctedInput);
     setImageUrl(null);
-    setImageMessage("");
+    setImageStatus("idle");
+    setImageError("");
+    setImageUpdatedAt(null);
+    setImageAttemptCount(0);
+    setImageModelAlias(null);
     setImageInfoHint("");
-    setHasTriedImageGeneration(false);
-    void requestTextResult(correctedInput, { manual: true });
-    void requestImageResult(correctedInput, { manual: true });
+    const nextTextResult = await requestTextResult(correctedInput, { manual: true });
+    if (!nextTextResult?.quickProjectId) return;
+    await requestImageResult(correctedInput, {
+      manual: true,
+      projectIdOverride: nextTextResult.quickProjectId
+    });
   };
 
   return (
@@ -839,8 +897,8 @@ export default function QuickEntryResultPage() {
               </div>
             )}
           </>
-        ) : imageFromDbMissing ? (
-            <div className="mt-5 rounded-[28px] border border-amber-200/80 bg-[linear-gradient(180deg,rgba(255,248,220,0.9),rgba(255,255,255,0.92))] p-6 text-sm text-amber-900 shadow-[0_22px_46px_-34px_rgba(217,119,6,0.34)]">
+        ) : shouldShowIdleImageCard ? (
+          <div className="mt-5 rounded-[28px] border border-amber-200/80 bg-[linear-gradient(180deg,rgba(255,248,220,0.9),rgba(255,255,255,0.92))] p-6 text-sm text-amber-900 shadow-[0_22px_46px_-34px_rgba(217,119,6,0.34)]">
             <p className="font-bold">AI 积木设计师还没来得及设计这张图，现在帮你补上？</p>
             <button
               type="button"
@@ -854,6 +912,30 @@ export default function QuickEntryResultPage() {
               让 AI 设计师设计一张
             </button>
           </div>
+        ) : shouldShowFailedCard ? (
+          <div className="mt-5 rounded-[28px] border border-rose-200/80 bg-[linear-gradient(180deg,rgba(255,241,242,0.94),rgba(255,255,255,0.92))] p-6 text-sm text-rose-900 shadow-[0_22px_48px_-34px_rgba(244,63,94,0.24)]">
+            <p className="font-bold text-base">这次预览图还没整理出来。</p>
+            <p className="mt-2 text-rose-800">{hasTimedOutWaiting ? "这次等待有点久了，你可以马上再试一次，或者先继续下一步。" : imageFailureMessage}</p>
+            <div className="mt-4 flex flex-wrap gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  if (effectiveInput) {
+                    void requestImageResult(effectiveInput, { manual: true });
+                  }
+                }}
+                className="relative inline-flex items-center justify-center rounded-xl bg-rose-500 px-4 py-2 text-sm font-bold text-white shadow-[0_4px_0_0_#e11d48] transition-all duration-200 hover:bg-rose-400 active:translate-y-1 active:shadow-none"
+              >
+                再试一次
+              </button>
+              <Link
+                href="/projects"
+                className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:bg-slate-50 active:translate-y-1 active:shadow-none"
+              >
+                先去项目列表
+              </Link>
+            </div>
+          </div>
         ) : (
           <div className="mt-5 rounded-[28px] border border-blue-200/80 bg-[linear-gradient(180deg,rgba(239,246,255,0.92),rgba(255,255,255,0.92))] p-6 text-sm text-blue-900 shadow-[0_22px_48px_-34px_rgba(59,130,246,0.28)]">
             <div className="mb-3 flex items-center gap-1.5">
@@ -862,7 +944,7 @@ export default function QuickEntryResultPage() {
               <span className="h-3 w-3 animate-bounce rounded bg-blue-500" />
               <span className="ml-2 inline-block h-3 w-3 animate-spin rounded border-2 border-blue-400 border-t-transparent" />
             </div>
-            <p className="font-bold text-base">AI 积木设计师正在为你设计中，预计 3-5 分钟，请耐心等待。</p>
+            <p className="font-bold text-base">AI 积木设计师正在为你设计中，请耐心等待。</p>
             <p className="mt-2 text-blue-800">{imageStageMessage}</p>
             <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-blue-200/50 shadow-inner">
               <div className="h-full rounded-full bg-blue-500 transition-all duration-1000" style={{ width: `${imageProgress}%` }} />
@@ -873,7 +955,7 @@ export default function QuickEntryResultPage() {
                 <Link href="/projects" className="mx-1 text-blue-600 underline underline-offset-4 hover:text-blue-900">
                   项目列表
                 </Link>
-                {showThreeMinuteGuidance ? "稍后查看，完成后会自动出现在那里。" : "稍后查看，设计好了会自动出现。"}
+                {showThreeMinuteGuidance ? "稍后查看，等它整理好会自动出现在那里。" : "稍后查看，设计好了会自动出现。"}
               </p>
             )}
           </div>
@@ -897,7 +979,7 @@ export default function QuickEntryResultPage() {
                     key={option.key}
                     type="button"
                     onClick={() => handleQuickCorrection(option.label)}
-                    disabled={resultState === "generating" || imageState === "generating"}
+                    disabled={resultState === "generating" || imageStatus === "generating" || imageStatus === "queued"}
                     className={
                       isActive
                         ? "rounded-xl border-2 border-amber-300 bg-amber-50 px-4 py-2 text-sm font-bold text-amber-900 shadow-sm"

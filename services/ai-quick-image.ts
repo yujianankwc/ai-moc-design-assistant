@@ -4,6 +4,7 @@ import type {
   QuickImageMode,
   QuickKnowledgePack
 } from "@/lib/quick-generation-pipeline";
+import type { QuickImageModelAlias } from "@/types/quick-entry";
 
 type GenerateQuickPreviewImageInput = {
   summary: QuickGenerationSummary;
@@ -14,7 +15,7 @@ type GenerateQuickPreviewImageInput = {
   imageModelAlias?: "default" | "nano_banner" | "nano_banana";
 };
 
-type QuickImageAlias = "default" | "nano_banner" | "nano_banana";
+type QuickImageAlias = QuickImageModelAlias;
 
 type UpstreamIds = {
   traceId?: string;
@@ -119,7 +120,7 @@ function pickImageSize(alias: QuickImageAlias) {
   return defaultSize;
 }
 
-function parseTimeoutMs(alias: QuickImageAlias) {
+export function getQuickImageTimeoutMs(alias: QuickImageAlias) {
   const aliasTimeoutRaw =
     alias === "nano_banana" || alias === "nano_banner"
       ? process.env.AI_IMAGE_TIMEOUT_MS_NANO_BANANA || process.env.AI_IMAGE_TIMEOUT_MS_NANO_BANNER
@@ -283,7 +284,7 @@ export async function generateQuickPreviewImage(
   const resolvedAlias = input.imageModelAlias || defaultAlias;
   const { apiKey, baseUrl, model: imageModel, endpoint } = pickImageConfig(resolvedAlias);
   const imageSize = pickImageSize(resolvedAlias);
-  const timeoutMs = parseTimeoutMs(resolvedAlias);
+  const timeoutMs = getQuickImageTimeoutMs(resolvedAlias);
   const requestUrl = endpoint || `${baseUrl}/images/generations`;
 
   if (!apiKey || !imageModel) {
@@ -314,4 +315,3 @@ export async function generateQuickPreviewImage(
     throw firstError;
   }
 }
-

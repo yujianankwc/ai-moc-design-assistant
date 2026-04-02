@@ -5,6 +5,8 @@ import type { ProjectFormPayload } from "@/types/project";
 import type {
   QuickDirection,
   QuickEntryInput,
+  QuickImageModelAlias,
+  QuickImageStatus,
   QuickEntryResult,
   QuickPath,
   QuickScalePreference,
@@ -407,6 +409,11 @@ export function saveQuickAIResultToSession(input: {
   result: QuickEntryResult;
   previewImageUrl?: string | null;
   imageWarning?: string;
+  imageStatus?: QuickImageStatus;
+  imageLastError?: string;
+  imageUpdatedAt?: string | null;
+  imageAttemptCount?: number;
+  imageModelAlias?: QuickImageModelAlias | null;
 }) {
   if (typeof window === "undefined") return;
   window.sessionStorage.setItem(
@@ -416,6 +423,11 @@ export function saveQuickAIResultToSession(input: {
       result: input.result,
       previewImageUrl: input.previewImageUrl ?? null,
       imageWarning: input.imageWarning ?? "",
+      imageStatus: input.imageStatus ?? (input.previewImageUrl ? "succeeded" : input.imageWarning ? "failed" : "idle"),
+      imageLastError: input.imageLastError ?? input.imageWarning ?? "",
+      imageUpdatedAt: input.imageUpdatedAt ?? null,
+      imageAttemptCount: input.imageAttemptCount ?? 0,
+      imageModelAlias: input.imageModelAlias ?? null,
       saved_at: new Date().toISOString()
     })
   );
@@ -425,6 +437,11 @@ export function updateQuickAIImageInSession(input: {
   idea: string;
   previewImageUrl?: string | null;
   imageWarning?: string;
+  imageStatus?: QuickImageStatus;
+  imageLastError?: string;
+  imageUpdatedAt?: string | null;
+  imageAttemptCount?: number;
+  imageModelAlias?: QuickImageModelAlias | null;
 }) {
   if (typeof window === "undefined") return;
   const raw = window.sessionStorage.getItem(QUICK_AI_RESULT_SESSION_KEY);
@@ -435,17 +452,36 @@ export function updateQuickAIImageInSession(input: {
       result?: QuickEntryResult;
       previewImageUrl?: string | null;
       imageWarning?: string;
+      imageStatus?: QuickImageStatus;
+      imageLastError?: string;
+      imageUpdatedAt?: string | null;
+      imageAttemptCount?: number;
+      imageModelAlias?: QuickImageModelAlias | null;
       saved_at?: string;
     };
     if (!parsed.input || !parsed.result) return;
     if ((parsed.input.idea || "").trim() !== input.idea.trim()) return;
 
+    const nextPreviewImageUrl =
+      typeof input.previewImageUrl === "string" ? input.previewImageUrl : input.previewImageUrl === null ? null : parsed.previewImageUrl ?? null;
+    const nextImageWarning = input.imageWarning ?? parsed.imageWarning ?? "";
+    const nextImageStatus =
+      input.imageStatus ??
+      (nextPreviewImageUrl ? "succeeded" : nextImageWarning ? "failed" : parsed.imageStatus ?? "idle");
+    const nextImageLastError =
+      input.imageLastError ?? (nextImageStatus === "failed" ? nextImageWarning : parsed.imageLastError ?? "");
+
     window.sessionStorage.setItem(
       QUICK_AI_RESULT_SESSION_KEY,
       JSON.stringify({
         ...parsed,
-        previewImageUrl: input.previewImageUrl ?? parsed.previewImageUrl ?? null,
-        imageWarning: input.imageWarning ?? parsed.imageWarning ?? "",
+        previewImageUrl: nextPreviewImageUrl,
+        imageWarning: nextImageStatus === "failed" ? nextImageWarning : "",
+        imageStatus: nextImageStatus,
+        imageLastError: nextImageStatus === "failed" ? nextImageLastError : "",
+        imageUpdatedAt: input.imageUpdatedAt ?? parsed.imageUpdatedAt ?? null,
+        imageAttemptCount: input.imageAttemptCount ?? parsed.imageAttemptCount ?? 0,
+        imageModelAlias: input.imageModelAlias ?? parsed.imageModelAlias ?? null,
         saved_at: new Date().toISOString()
       })
     );
@@ -460,6 +496,11 @@ export function readQuickAIResultFromSession():
       result: QuickEntryResult;
       previewImageUrl: string | null;
       imageWarning: string;
+      imageStatus: QuickImageStatus;
+      imageLastError: string;
+      imageUpdatedAt: string | null;
+      imageAttemptCount: number;
+      imageModelAlias: QuickImageModelAlias | null;
       saved_at: string;
     }
   | null {
@@ -472,14 +513,31 @@ export function readQuickAIResultFromSession():
       result?: QuickEntryResult;
       previewImageUrl?: string | null;
       imageWarning?: string;
+      imageStatus?: QuickImageStatus;
+      imageLastError?: string;
+      imageUpdatedAt?: string | null;
+      imageAttemptCount?: number;
+      imageModelAlias?: QuickImageModelAlias | null;
       saved_at?: string;
     };
     if (!parsed.input || !parsed.result) return null;
+    const previewImageUrl = typeof parsed.previewImageUrl === "string" ? parsed.previewImageUrl : null;
+    const imageWarning = typeof parsed.imageWarning === "string" ? parsed.imageWarning : "";
     return {
       input: parsed.input,
       result: parsed.result,
-      previewImageUrl: typeof parsed.previewImageUrl === "string" ? parsed.previewImageUrl : null,
-      imageWarning: typeof parsed.imageWarning === "string" ? parsed.imageWarning : "",
+      previewImageUrl,
+      imageWarning,
+      imageStatus: parsed.imageStatus ?? (previewImageUrl ? "succeeded" : imageWarning ? "failed" : "idle"),
+      imageLastError: typeof parsed.imageLastError === "string" ? parsed.imageLastError : imageWarning,
+      imageUpdatedAt: typeof parsed.imageUpdatedAt === "string" ? parsed.imageUpdatedAt : null,
+      imageAttemptCount: typeof parsed.imageAttemptCount === "number" ? parsed.imageAttemptCount : 0,
+      imageModelAlias:
+        parsed.imageModelAlias === "default" ||
+        parsed.imageModelAlias === "nano_banner" ||
+        parsed.imageModelAlias === "nano_banana"
+          ? parsed.imageModelAlias
+          : null,
       saved_at: parsed.saved_at ?? ""
     };
   } catch {
@@ -525,4 +583,3 @@ export function toQuickPrefillFromSearchParams(searchParams: URLSearchParams): Q
 }
 
 export type { QuickPrefillPayload, ReferenceSample };
-

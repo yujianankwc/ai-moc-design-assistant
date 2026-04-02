@@ -4,9 +4,22 @@ import {
   buildQuickKnowledgePack,
   decideQuickImageMode
 } from "@/lib/quick-generation-pipeline";
-import { generateQuickPreviewImage, isImageGenerationUpstreamError, type GenerateQuickPreviewImageResult } from "@/services/ai-quick-image";
-import { updateQuickProjectImageForCurrentVisitor } from "@/services/project-service";
-import type { QuickDirection, QuickEntryInput, QuickScalePreference, QuickStyle } from "@/types/quick-entry";
+import {
+  generateQuickPreviewImage,
+  isImageGenerationUpstreamError,
+  type GenerateQuickPreviewImageResult
+} from "@/services/ai-quick-image";
+import {
+  getQuickProjectByIdForCurrentVisitor,
+  updateQuickProjectImageForCurrentVisitor
+} from "@/services/project-service";
+import type {
+  QuickDirection,
+  QuickEntryInput,
+  QuickImageModelAlias,
+  QuickScalePreference,
+  QuickStyle
+} from "@/types/quick-entry";
 
 type QuickGenerateImageBody = {
   idea?: string;
@@ -17,10 +30,10 @@ type QuickGenerateImageBody = {
   correctionIntent?: string;
   regenerateToken?: string;
   quickProjectId?: string;
-  imageModelAlias?: "default" | "nano_banner" | "nano_banana";
+  imageModelAlias?: QuickImageModelAlias;
 };
 
-type QuickImageAlias = "default" | "nano_banner" | "nano_banana";
+type QuickImageAlias = QuickImageModelAlias;
 
 type ImageErrorType =
   | "balance_insufficient"
@@ -62,10 +75,10 @@ function toFriendlyImageError(error: unknown) {
   const raw = error instanceof Error ? error.message : String(error || "");
   const lowerRaw = raw.toLowerCase();
   if (lowerRaw.includes("fallback_exhausted")) {
-    return "现在设计积木的人太多了，AI 设计师忙不过来，稍后去项目列表看看，我们一定会帮你设计出来。";
+    return "这次预览图还没整理出来，可以稍后再试一次。";
   }
-  if (raw.includes("used_up") || raw.toLowerCase().includes("balance is not sufficient")) {
-    return "AI 积木设计师今天的设计配额用完了，正在补充中，请稍后再来试试。";
+  if (raw.includes("used_up") || lowerRaw.includes("balance is not sufficient")) {
+    return "当前预览图配额比较紧张，请稍后再试。";
   }
   if (
     raw.includes("No available channel") ||
@@ -73,7 +86,7 @@ function toFriendlyImageError(error: unknown) {
     lowerRaw.includes("channel busy") ||
     lowerRaw.includes("service unavailable")
   ) {
-    return "大家都在设计自己的积木创意，AI 设计师正忙着赶稿，请稍后去项目列表查看。";
+    return "当前生成通道有点拥挤，这次预览图没出来，请稍后再试。";
   }
   if (
     lowerRaw.includes("timed out") ||
@@ -81,12 +94,12 @@ function toFriendlyImageError(error: unknown) {
     raw.includes("AbortError") ||
     lowerRaw.includes("aborted")
   ) {
-    return "这个创意有点复杂，AI 设计师还在琢磨中，稍后去项目列表看看，我们会帮你设计好的。";
+    return "这次预览图整理超时了，请再试一次。";
   }
   if (lowerRaw.includes("invalidparameter") || lowerRaw.includes("parameter `size` specified")) {
-    return "设计参数需要调整一下，我们已经记录下来了，请再试一次。";
+    return "这次设计参数没对上，请再试一次。";
   }
-  return "AI 积木设计师暂时忙不过来，稍后去项目列表查看，我们一定会帮你设计出来。";
+  return "这次预览图还没整理出来，请再试一次。";
 }
 
 function classifyImageError(error: unknown): ImageErrorType {
@@ -200,6 +213,17 @@ function isRetriableImageErrorType(errorType: ImageErrorType) {
   return errorType !== "balance_insufficient" && errorType !== "invalid_parameter";
 }
 
+function inferFinalModelAlias(input: {
+  requestedAlias: QuickImageAlias;
+  usedFallbackToDefault: boolean;
+  referenceImageDropped: boolean;
+  usedReferenceImage: boolean;
+}): QuickImageAlias {
+  if (input.usedFallbackToDefault) return "default";
+  if (input.usedReferenceImage && input.referenceImageDropped) return "default";
+  return input.requestedAlias;
+}
+
 export async function POST(request: Request) {
   const startedAt = Date.now();
   let aliasForLog: QuickImageAlias = "default";
@@ -208,11 +232,14 @@ export async function POST(request: Request) {
   let usedFallbackForLog = false;
   let quickProjectIdForPersist = "";
   let ideaForPersist = "";
+  let nextAttemptCount = 0;
+  let finalModelAlias: QuickImageAlias = "default";
+
   try {
     const body = (await request.json()) as QuickGenerateImageBody;
     const input = sanitizeInput(body);
     if (!input) {
-      return NextResponse.json({ error: "缺少创意输入，无法生成预览图。" }, { status: 400 });
+      return NextResponse.json({ status: "failed", message: "缺少创意输入，无法生成预览图。", retryable: false }, { status: 400 });
     }
 
     const summary = buildQuickGenerationSummary(input);
@@ -221,20 +248,34 @@ export async function POST(request: Request) {
     const requestedAlias = resolveAliasFromBody(body);
     const usedReferenceImage = hasReferenceImage(input);
     const ideaLength = input.idea.length;
+    const quickProjectId = typeof body.quickProjectId === "string" ? body.quickProjectId.trim() : "";
+    const regenToken = typeof body.regenerateToken === "string" ? body.regenerateToken : "";
 
     aliasForLog = requestedAlias;
     usedReferenceImageForLog = usedReferenceImage;
     ideaLengthForLog = ideaLength;
-    quickProjectIdForPersist = typeof body.quickProjectId === "string" ? body.quickProjectId.trim() : "";
+    quickProjectIdForPersist = quickProjectId;
     ideaForPersist = input.idea;
+
+    if (quickProjectId) {
+      const existingProject = await getQuickProjectByIdForCurrentVisitor(quickProjectId);
+      nextAttemptCount = (existingProject?.imageAttemptCount ?? 0) + 1;
+      await updateQuickProjectImageForCurrentVisitor({
+        projectId: quickProjectId,
+        idea: input.idea,
+        previewImageUrl: null,
+        imageWarning: "",
+        imageStatus: "generating",
+        imageLastError: "",
+        imageAttemptCount: nextAttemptCount,
+        imageModelAlias: requestedAlias
+      });
+    }
+
     let previewImageUrl = "";
     let usedFallbackToDefault = false;
     let referenceImageDropped = false;
-    const regenToken = typeof body.regenerateToken === "string" ? body.regenerateToken : "";
-
-    const primaryMaxAttempts = usedReferenceImage && requestedAlias !== "default"
-      ? 1 + PRIMARY_RETRY_WITH_REF_IMAGE
-      : 1;
+    const primaryMaxAttempts = usedReferenceImage && requestedAlias !== "default" ? 1 + PRIMARY_RETRY_WITH_REF_IMAGE : 1;
 
     let primaryLastRaw = "";
     let primaryResult: GenerateQuickPreviewImageResult | null = null;
@@ -255,7 +296,6 @@ export async function POST(request: Request) {
         break;
       } catch (error) {
         primaryLastRaw = error instanceof Error ? error.message : String(error || "");
-        const upstreamIds = extractUpstreamIds(error);
         logImageGenerationEvent({
           phase: "primary_failed",
           alias: requestedAlias,
@@ -264,7 +304,7 @@ export async function POST(request: Request) {
           usedReferenceImage,
           elapsedMs: Date.now() - startedAt,
           ideaLength,
-          ...upstreamIds
+          ...extractUpstreamIds(error)
         });
         if (attempt < primaryMaxAttempts && isRetriableImageErrorType(classifyImageError(error))) {
           await sleep(PRIMARY_RETRY_DELAY_MS);
@@ -297,10 +337,8 @@ export async function POST(request: Request) {
           }
           break;
         } catch (fallbackError) {
-          const fallbackRaw = fallbackError instanceof Error ? fallbackError.message : String(fallbackError || "");
+          fallbackLastRaw = fallbackError instanceof Error ? fallbackError.message : String(fallbackError || "");
           const fallbackErrorType = classifyImageError(fallbackError);
-          const upstreamIds = extractUpstreamIds(fallbackError);
-          fallbackLastRaw = fallbackRaw;
           logImageGenerationEvent({
             phase: "fallback_failed",
             alias: requestedAlias,
@@ -309,11 +347,11 @@ export async function POST(request: Request) {
             usedReferenceImage,
             elapsedMs: Date.now() - startedAt,
             ideaLength,
-            ...upstreamIds
+            ...extractUpstreamIds(fallbackError)
           });
           const shouldRetry = attempt < FALLBACK_MAX_RETRIES && isRetriableImageErrorType(fallbackErrorType);
           if (!shouldRetry) {
-            throw new Error(`fallback_exhausted; primary=${primaryLastRaw}; fallback=${fallbackRaw}`);
+            throw new Error(`fallback_exhausted; primary=${primaryLastRaw}; fallback=${fallbackLastRaw}`);
           }
           await sleep(FALLBACK_RETRY_DELAY_MS);
         }
@@ -322,6 +360,13 @@ export async function POST(request: Request) {
         throw new Error(`fallback_exhausted; primary=${primaryLastRaw}; fallback=${fallbackLastRaw || primaryLastRaw}`);
       }
     }
+
+    finalModelAlias = inferFinalModelAlias({
+      requestedAlias,
+      usedFallbackToDefault,
+      referenceImageDropped,
+      usedReferenceImage
+    });
 
     logImageGenerationEvent({
       phase: "request_succeeded",
@@ -333,29 +378,25 @@ export async function POST(request: Request) {
     });
 
     let persistedToProject = false;
-    const quickProjectId = quickProjectIdForPersist;
     if (quickProjectId) {
-      try {
-        await updateQuickProjectImageForCurrentVisitor({
-          projectId: quickProjectId,
-          idea: input.idea,
-          previewImageUrl,
-          imageWarning: ""
-        });
-        persistedToProject = true;
-      } catch (persistError) {
-        console.warn(
-          JSON.stringify({
-            tag: "quick_image_generation_persist_failed",
-            quickProjectId,
-            message: persistError instanceof Error ? persistError.message : String(persistError || "")
-          })
-        );
-      }
+      await updateQuickProjectImageForCurrentVisitor({
+        projectId: quickProjectId,
+        idea: input.idea,
+        previewImageUrl,
+        imageWarning: "",
+        imageStatus: "succeeded",
+        imageLastError: "",
+        imageAttemptCount: nextAttemptCount,
+        imageModelAlias: finalModelAlias
+      });
+      persistedToProject = true;
     }
 
     return NextResponse.json({
+      status: "succeeded",
       previewImageUrl,
+      message: "预览图已整理完成。",
+      retryable: false,
       usedFallbackToDefault,
       usedReferenceImage,
       referenceImageDropped,
@@ -364,7 +405,7 @@ export async function POST(request: Request) {
   } catch (error) {
     const errorType = classifyImageError(error);
     const retryable = isRetriableImageErrorType(errorType);
-    const upstreamIds = extractUpstreamIds(error);
+    const message = toFriendlyImageError(error);
     logImageGenerationEvent({
       phase: "request_failed",
       alias: aliasForLog,
@@ -373,23 +414,31 @@ export async function POST(request: Request) {
       usedReferenceImage: usedReferenceImageForLog,
       elapsedMs: Date.now() - startedAt,
       ideaLength: ideaLengthForLog,
-      ...upstreamIds
+      ...extractUpstreamIds(error)
     });
+
     if (quickProjectIdForPersist && ideaForPersist) {
-      try {
-        await updateQuickProjectImageForCurrentVisitor({
-          projectId: quickProjectIdForPersist,
-          idea: ideaForPersist,
-          imageWarning: toFriendlyImageError(error)
-        });
-      } catch {
-        // Ignore persist warning failure in error path.
-      }
+      await updateQuickProjectImageForCurrentVisitor({
+        projectId: quickProjectIdForPersist,
+        idea: ideaForPersist,
+        previewImageUrl: null,
+        imageWarning: message,
+        imageStatus: "failed",
+        imageLastError: message,
+        imageAttemptCount: nextAttemptCount,
+        imageModelAlias: usedFallbackForLog ? "default" : aliasForLog
+      });
     }
+
     return NextResponse.json(
       {
-        error: toFriendlyImageError(error),
-        retryable
+        status: "failed",
+        previewImageUrl: null,
+        message,
+        retryable,
+        usedFallbackToDefault: usedFallbackForLog,
+        usedReferenceImage: usedReferenceImageForLog,
+        referenceImageDropped: false
       },
       { status: 500 }
     );

@@ -11,6 +11,7 @@ import {
 } from "@/lib/project-language";
 import { buildQuickPathHref } from "@/lib/quick-path-context";
 import {
+  getQuickProjectImageMeta,
   getQuickProjectPreviewImageUrl,
   listProjectsForCurrentVisitor,
   quickProjectHasImage
@@ -68,6 +69,7 @@ function isQuickProject(category: string | null | undefined) {
 
 function mapProjectRowToCard(item: ProjectRow): ProjectCardItem {
   const quick = isQuickProject(item.category);
+  const imageMeta = getQuickProjectImageMeta(item.notes_for_factory);
   const hasImage = quickProjectHasImage(item.notes_for_factory);
   const previewImageUrl = getQuickProjectPreviewImageUrl(item.notes_for_factory);
   const linkedIntent = item.linked_intent;
@@ -128,6 +130,8 @@ function mapProjectRowToCard(item: ProjectRow): ProjectCardItem {
   }
 
   if (quick) {
+    const isImageGenerating = imageMeta.imageStatus === "queued" || imageMeta.imageStatus === "generating";
+    const isImageFailed = imageMeta.imageStatus === "failed";
     return {
       id: item.id,
       name: clampTitle(item.title || "未命名项目"),
@@ -136,10 +140,20 @@ function mapProjectRowToCard(item: ProjectRow): ProjectCardItem {
       stage: linkedStage,
       statusExplanation: hasImage
         ? "方向判断已经完成，当前更适合先看试做路径，判断这个方向值不值得继续推进。"
-        : "当前还处在创意已生成阶段，更适合继续补充方向和主体表达。",
+        : isImageGenerating
+          ? "方向判断已经完成，预览图还在整理中，可以稍后回来继续看。"
+          : isImageFailed
+            ? "方向判断已经完成，但这次预览图没整理出来，可以重新生成一张。"
+            : "当前还处在创意已生成阶段，更适合继续补充方向和主体表达。",
       judgement: hasImage ? "更适合先做小批量验证" : "更适合先验证用户兴趣",
-      recentStatus: hasImage ? "已有方向图和判断，当前更适合先看试做路径。" : "文字判断已经生成，建议继续补上方向图和判断。",
-      nextSuggestion: hasImage ? "去看试做路径" : "继续补充方向",
+      recentStatus: hasImage
+        ? "已有方向图和判断，当前更适合先看试做路径。"
+        : isImageGenerating
+          ? "这条方向的预览图还在整理中。"
+          : isImageFailed
+            ? "这次预览图没有整理出来，建议重新试一次。"
+            : "文字判断已经生成，建议继续补上方向图和判断。",
+      nextSuggestion: hasImage ? "去看试做路径" : isImageGenerating ? "稍后查看预览图" : isImageFailed ? "重新生成预览图" : "继续补充方向",
       updatedAtLabel: formatDate(item.updated_at),
       sortAt: item.updated_at,
       viewHref: `/quick/result?quickProjectId=${item.id}`,

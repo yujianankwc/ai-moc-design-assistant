@@ -9,6 +9,12 @@ export type QuickScalePreference = (typeof QUICK_SCALE_OPTIONS)[number];
 
 export type QuickPath = "small_batch" | "creator_plan" | "professional_upgrade";
 
+export const QUICK_IMAGE_STATUS_OPTIONS = ["idle", "queued", "generating", "succeeded", "failed"] as const;
+export type QuickImageStatus = (typeof QUICK_IMAGE_STATUS_OPTIONS)[number];
+
+export const QUICK_IMAGE_MODEL_ALIAS_OPTIONS = ["default", "nano_banner", "nano_banana"] as const;
+export type QuickImageModelAlias = (typeof QUICK_IMAGE_MODEL_ALIAS_OPTIONS)[number];
+
 export type QuickEntryInput = {
   idea: string;
   direction: QuickDirection | "";
@@ -26,4 +32,3 @@ export type QuickEntryResult = {
   recommendedReason: string;
   suggestedPath: QuickPath;
 };
-

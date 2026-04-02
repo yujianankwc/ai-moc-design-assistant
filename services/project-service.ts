@@ -20,7 +20,12 @@ import { generateProjectOutputWithAI } from "@/services/ai-project-output";
 import type { GenerationMode } from "@/types/generation-mode";
 import type { ProjectDetailRow, ProjectFormPayload, ProjectRow, ProjectStatus } from "@/types/project";
 import type { ProjectOutputRow } from "@/types/project-output";
-import type { QuickEntryInput, QuickEntryResult } from "@/types/quick-entry";
+import type {
+  QuickEntryInput,
+  QuickEntryResult,
+  QuickImageModelAlias,
+  QuickImageStatus
+} from "@/types/quick-entry";
 import type {
   CreateIntentInput,
   CreateQuoteInput,
@@ -45,13 +50,27 @@ export function quickProjectHasImage(notesForFactory: string | null | undefined)
 }
 
 export function getQuickProjectPreviewImageUrl(notesForFactory: string | null | undefined): string | null {
-  if (!notesForFactory || !notesForFactory.startsWith(QUICK_PROJECT_DATA_MARKER)) return null;
+  return getQuickProjectImageMeta(notesForFactory).previewImageUrl;
+}
+
+export function getQuickProjectImageMeta(notesForFactory: string | null | undefined): QuickProjectImageMeta {
+  if (!notesForFactory || !notesForFactory.startsWith(QUICK_PROJECT_DATA_MARKER)) {
+    return buildDefaultQuickProjectImageMeta();
+  }
   try {
     const json = notesForFactory.slice(QUICK_PROJECT_DATA_MARKER.length);
-    const parsed = JSON.parse(json) as { previewImageUrl?: string | null };
-    return typeof parsed?.previewImageUrl === "string" && parsed.previewImageUrl.trim() ? parsed.previewImageUrl.trim() : null;
+    const parsed = normalizeQuickProjectData(JSON.parse(json) as QuickProjectData);
+    return {
+      previewImageUrl: parsed.previewImageUrl ?? null,
+      imageWarning: parsed.imageWarning ?? "",
+      imageStatus: parsed.imageStatus ?? "idle",
+      imageUpdatedAt: parsed.imageUpdatedAt ?? null,
+      imageLastError: parsed.imageLastError ?? "",
+      imageAttemptCount: parsed.imageAttemptCount ?? 0,
+      imageModelAlias: parsed.imageModelAlias ?? null
+    };
   } catch {
-    return null;
+    return buildDefaultQuickProjectImageMeta();
   }
 }
 
@@ -61,7 +80,74 @@ type QuickProjectData = {
   textWarning?: string;
   previewImageUrl?: string | null;
   imageWarning?: string;
+  imageStatus?: QuickImageStatus;
+  imageUpdatedAt?: string | null;
+  imageLastError?: string;
+  imageAttemptCount?: number;
+  imageModelAlias?: QuickImageModelAlias | null;
 };
+
+export type QuickProjectImageMeta = {
+  previewImageUrl: string | null;
+  imageWarning: string;
+  imageStatus: QuickImageStatus;
+  imageUpdatedAt: string | null;
+  imageLastError: string;
+  imageAttemptCount: number;
+  imageModelAlias: QuickImageModelAlias | null;
+};
+
+function buildDefaultQuickProjectImageMeta(): QuickProjectImageMeta {
+  return {
+    previewImageUrl: null,
+    imageWarning: "",
+    imageStatus: "idle",
+    imageUpdatedAt: null,
+    imageLastError: "",
+    imageAttemptCount: 0,
+    imageModelAlias: null
+  };
+}
+
+function normalizeQuickImageStatus(value: unknown, fallback: QuickImageStatus): QuickImageStatus {
+  return value === "idle" ||
+    value === "queued" ||
+    value === "generating" ||
+    value === "succeeded" ||
+    value === "failed"
+    ? value
+    : fallback;
+}
+
+function normalizeQuickImageModelAlias(value: unknown): QuickImageModelAlias | null {
+  return value === "default" || value === "nano_banner" || value === "nano_banana" ? value : null;
+}
+
+function normalizeQuickProjectData(input: QuickProjectData): QuickProjectData {
+  const previewImageUrl =
+    typeof input.previewImageUrl === "string" && input.previewImageUrl.trim()
+      ? input.previewImageUrl.trim()
+      : null;
+  const imageWarning = typeof input.imageWarning === "string" ? input.imageWarning : "";
+  const inferredStatus = previewImageUrl ? "succeeded" : imageWarning ? "failed" : "idle";
+  const imageStatus = normalizeQuickImageStatus(input.imageStatus, inferredStatus);
+  const imageLastError =
+    typeof input.imageLastError === "string"
+      ? input.imageLastError
+      : imageStatus === "failed"
+        ? imageWarning
+        : "";
+  return {
+    ...input,
+    previewImageUrl,
+    imageWarning: imageStatus === "failed" ? imageWarning || imageLastError : "",
+    imageStatus,
+    imageUpdatedAt: typeof input.imageUpdatedAt === "string" ? input.imageUpdatedAt : null,
+    imageLastError: imageStatus === "failed" ? imageLastError : "",
+    imageAttemptCount: typeof input.imageAttemptCount === "number" ? input.imageAttemptCount : 0,
+    imageModelAlias: normalizeQuickImageModelAlias(input.imageModelAlias)
+  };
+}
 
 function clampChars(value: string, maxChars: number) {
   const chars = Array.from(value.trim());
@@ -116,7 +202,7 @@ function decodeQuickProjectData(raw: string | null | undefined): QuickProjectDat
     const json = raw.slice(QUICK_PROJECT_DATA_MARKER.length);
     const parsed = JSON.parse(json) as QuickProjectData;
     if (!parsed?.input?.idea || !parsed?.result?.topJudgement) return null;
-    return parsed;
+    return normalizeQuickProjectData(parsed);
   } catch {
     return null;
   }
@@ -713,8 +799,7 @@ export async function createQuickProjectForCurrentVisitor(input: {
     input: input.quickInput,
     result: input.quickResult,
     textWarning: input.textWarning ?? "",
-    previewImageUrl: null,
-    imageWarning: ""
+    ...buildDefaultQuickProjectImageMeta()
   };
 
   const { data, error } = await supabase
@@ -763,6 +848,7 @@ export async function updateQuickProjectResultForCurrentVisitor(input: {
   quickInput: QuickEntryInput;
   quickResult: QuickEntryResult;
   textWarning?: string;
+  resetImage?: boolean;
 }) {
   const supabase = getSupabaseServerClient();
   const currentVisitorUser = await ensureCurrentVisitorUser();
@@ -787,12 +873,22 @@ export async function updateQuickProjectResultForCurrentVisitor(input: {
   }
 
   const previous = decodeQuickProjectData(data.notes_for_factory);
+  const imageMeta = input.resetImage
+    ? buildDefaultQuickProjectImageMeta()
+    : {
+        previewImageUrl: previous?.previewImageUrl ?? null,
+        imageWarning: previous?.imageWarning ?? "",
+        imageStatus: previous?.imageStatus ?? "idle",
+        imageUpdatedAt: previous?.imageUpdatedAt ?? null,
+        imageLastError: previous?.imageLastError ?? "",
+        imageAttemptCount: previous?.imageAttemptCount ?? 0,
+        imageModelAlias: previous?.imageModelAlias ?? null
+      };
   const nextData: QuickProjectData = {
     input: input.quickInput,
     result: input.quickResult,
     textWarning: input.textWarning ?? "",
-    previewImageUrl: previous?.previewImageUrl ?? null,
-    imageWarning: previous?.imageWarning ?? ""
+    ...imageMeta
   };
 
   const { error: updateError } = await supabase
@@ -864,6 +960,11 @@ export async function getQuickProjectByIdForCurrentVisitor(projectId: string) {
     result: quickData.result,
     previewImageUrl: quickData.previewImageUrl ?? null,
     imageWarning: quickData.imageWarning ?? "",
+    imageStatus: quickData.imageStatus ?? "idle",
+    imageUpdatedAt: quickData.imageUpdatedAt ?? null,
+    imageLastError: quickData.imageLastError ?? "",
+    imageAttemptCount: quickData.imageAttemptCount ?? 0,
+    imageModelAlias: quickData.imageModelAlias ?? null,
     textWarning: quickData.textWarning ?? ""
   };
 }
@@ -877,6 +978,11 @@ export async function updateQuickProjectImageForCurrentVisitor(input: {
   idea?: string;
   previewImageUrl?: string | null;
   imageWarning?: string;
+  imageStatus?: QuickImageStatus;
+  imageUpdatedAt?: string | null;
+  imageLastError?: string;
+  imageAttemptCount?: number;
+  imageModelAlias?: QuickImageModelAlias | null;
 }) {
   const supabase = getSupabaseServerClient();
   const currentVisitorUser = await ensureCurrentVisitorUser();
@@ -904,11 +1010,44 @@ export async function updateQuickProjectImageForCurrentVisitor(input: {
     throw new Error("轻量项目校验失败，无法更新预览图。");
   }
 
+  const nextPreviewImageUrl =
+    typeof input.previewImageUrl === "string"
+      ? input.previewImageUrl
+      : input.previewImageUrl === null
+        ? null
+        : quickData.previewImageUrl ?? null;
+  const didTouchImageState =
+    input.previewImageUrl !== undefined ||
+    input.imageWarning !== undefined ||
+    input.imageStatus !== undefined ||
+    input.imageUpdatedAt !== undefined ||
+    input.imageLastError !== undefined ||
+    input.imageAttemptCount !== undefined ||
+    input.imageModelAlias !== undefined;
+  const nextImageStatus = input.imageStatus
+    ? input.imageStatus
+    : nextPreviewImageUrl
+      ? "succeeded"
+      : typeof input.imageWarning === "string"
+        ? "failed"
+        : quickData.imageStatus ?? "idle";
   const nextData: QuickProjectData = {
     ...quickData,
-    previewImageUrl:
-      typeof input.previewImageUrl === "string" ? input.previewImageUrl : input.previewImageUrl === null ? null : quickData.previewImageUrl ?? null,
-    imageWarning: input.imageWarning ?? quickData.imageWarning ?? ""
+    previewImageUrl: nextPreviewImageUrl,
+    imageWarning:
+      nextImageStatus === "failed"
+        ? input.imageWarning ?? quickData.imageWarning ?? ""
+        : "",
+    imageStatus: nextImageStatus,
+    imageUpdatedAt: didTouchImageState ? input.imageUpdatedAt ?? new Date().toISOString() : quickData.imageUpdatedAt ?? null,
+    imageLastError:
+      nextImageStatus === "failed"
+        ? input.imageLastError ?? input.imageWarning ?? quickData.imageLastError ?? ""
+        : "",
+    imageAttemptCount:
+      typeof input.imageAttemptCount === "number" ? input.imageAttemptCount : quickData.imageAttemptCount ?? 0,
+    imageModelAlias:
+      input.imageModelAlias === undefined ? quickData.imageModelAlias ?? null : input.imageModelAlias
   };
 
   const { error: updateError } = await supabase
