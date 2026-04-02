@@ -1,6 +1,12 @@
 import { cookies, headers } from "next/headers";
 import { buildEditableVersion } from "@/lib/editable-version";
 import { evaluateProductionScoreByRules } from "@/lib/production-score-rules";
+import {
+  formatShowcaseDisplayControl,
+  parseShowcaseDisplayControl,
+  upsertShowcaseDisplayControl,
+  type ShowcaseDisplayControl
+} from "@/lib/showcase-display-control";
 import { getSupabaseServerClient } from "@/lib/supabase-server";
 import {
   buildScopedDemoUser,
@@ -22,20 +28,30 @@ import type {
   IntentStatus,
   QuoteStatus
 } from "@/types/intent";
-import type { CreateServiceRequestInput } from "@/types/service-request";
+import type {
+  CreateServiceRequestInput,
+  ServiceRequestRow,
+  ServiceRequestStatus
+} from "@/types/service-request";
 
 export const SYSTEM_FALLBACK_MARKER = "__SYSTEM_FALLBACK__:";
 export const RULE_DEDUCTION_MARKER = "__RULE_DEDUCTIONS__:";
 export const QUICK_PROJECT_DATA_MARKER = "__QUICK_PROJECT_DATA__:";
 
+export type ShowcaseInteractionAction = "like" | "watch";
+
 export function quickProjectHasImage(notesForFactory: string | null | undefined): boolean {
-  if (!notesForFactory || !notesForFactory.startsWith(QUICK_PROJECT_DATA_MARKER)) return false;
+  return Boolean(getQuickProjectPreviewImageUrl(notesForFactory));
+}
+
+export function getQuickProjectPreviewImageUrl(notesForFactory: string | null | undefined): string | null {
+  if (!notesForFactory || !notesForFactory.startsWith(QUICK_PROJECT_DATA_MARKER)) return null;
   try {
     const json = notesForFactory.slice(QUICK_PROJECT_DATA_MARKER.length);
     const parsed = JSON.parse(json) as { previewImageUrl?: string | null };
-    return Boolean(parsed?.previewImageUrl);
+    return typeof parsed?.previewImageUrl === "string" && parsed.previewImageUrl.trim() ? parsed.previewImageUrl.trim() : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -106,7 +122,7 @@ function decodeQuickProjectData(raw: string | null | undefined): QuickProjectDat
   }
 }
 
-export async function ensureDemoUser() {
+export async function ensureCurrentVisitorUser() {
   const supabase = getSupabaseServerClient();
   const headerStore = await headers();
   const cookieStore = await cookies();
@@ -116,13 +132,13 @@ export async function ensureDemoUser() {
   if (!visitorId) {
     throw new Error("访客会话无效，请刷新页面后重试。");
   }
-  const demoUser = buildScopedDemoUser(visitorId);
+  const currentVisitorUser = buildScopedDemoUser(visitorId);
 
   const { error } = await supabase.from("users").upsert(
     {
-      id: demoUser.id,
-      email: demoUser.email,
-      name: demoUser.name
+      id: currentVisitorUser.id,
+      email: currentVisitorUser.email,
+      name: currentVisitorUser.name
     },
     { onConflict: "id" }
   );
@@ -131,20 +147,178 @@ export async function ensureDemoUser() {
     throw new Error(`演示用户初始化失败: ${error.message}`);
   }
 
-  return demoUser;
+  return currentVisitorUser;
 }
 
-export async function createProjectForDemoUser(input: {
+export async function ensureDemoUser() {
+  return ensureCurrentVisitorUser();
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  );
+}
+
+async function resolveCurrentVisitorId() {
+  const headerStore = await headers();
+  const cookieStore = await cookies();
+  const headerVisitorId = normalizeVisitorId(headerStore.get(VISITOR_HEADER_NAME) ?? "");
+  const cookieVisitorId = await resolveVisitorIdFromToken(cookieStore.get(VISITOR_COOKIE_NAME)?.value ?? "");
+  return headerVisitorId || cookieVisitorId;
+}
+
+function buildShowcaseInteractionTarget(showcaseKey: string) {
+  const safeKey = showcaseKey.trim();
+  if (!safeKey) {
+    throw new Error("公开展示标识不能为空。");
+  }
+  return {
+    showcaseKey: safeKey,
+    projectId: isUuid(safeKey) ? safeKey : null
+  };
+}
+
+export async function getShowcaseInteractionSummary(showcaseKey: string) {
+  const supabase = getSupabaseServerClient();
+  const visitorId = await resolveCurrentVisitorId();
+  const target = buildShowcaseInteractionTarget(showcaseKey);
+
+  const [
+    { count: likeCount, error: likeError },
+    { count: watchCount, error: watchError },
+    { data: currentRows, error: currentError }
+  ] = await Promise.all([
+    supabase
+      .from("showcase_interactions")
+      .select("id", { count: "exact", head: true })
+      .eq("showcase_key", target.showcaseKey)
+      .eq("action_type", "like"),
+    supabase
+      .from("showcase_interactions")
+      .select("id", { count: "exact", head: true })
+      .eq("showcase_key", target.showcaseKey)
+      .eq("action_type", "watch"),
+    visitorId
+      ? supabase
+          .from("showcase_interactions")
+          .select("action_type")
+          .eq("showcase_key", target.showcaseKey)
+          .eq("visitor_id", visitorId)
+      : Promise.resolve({ data: [], error: null })
+  ]);
+
+  if (likeError) throw new Error(`公开展示收藏数读取失败: ${likeError.message}`);
+  if (watchError) throw new Error(`公开展示关注数读取失败: ${watchError.message}`);
+  if (currentError) throw new Error(`公开展示互动状态读取失败: ${currentError.message}`);
+
+  const actionSet = new Set((currentRows || []).map((item) => item.action_type));
+  return {
+    likes: likeCount || 0,
+    watchers: watchCount || 0,
+    liked: actionSet.has("like"),
+    watching: actionSet.has("watch")
+  };
+}
+
+export async function setShowcaseInteractionForVisitor(input: {
+  showcaseKey: string;
+  actionType: ShowcaseInteractionAction;
+  active: boolean;
+}) {
+  const supabase = getSupabaseServerClient();
+  const visitorId = await resolveCurrentVisitorId();
+  if (!visitorId) {
+    throw new Error("访客会话无效，请刷新页面后重试。");
+  }
+
+  const target = buildShowcaseInteractionTarget(input.showcaseKey);
+
+  if (input.active) {
+    const { error } = await supabase.from("showcase_interactions").upsert(
+      {
+        project_id: target.projectId,
+        showcase_key: target.showcaseKey,
+        visitor_id: visitorId,
+        action_type: input.actionType
+      },
+      { onConflict: "showcase_key,visitor_id,action_type" }
+    );
+    if (error) {
+      throw new Error(`公开展示互动写入失败: ${error.message}`);
+    }
+  } else {
+    const { error } = await supabase
+      .from("showcase_interactions")
+      .delete()
+      .eq("showcase_key", target.showcaseKey)
+      .eq("visitor_id", visitorId)
+      .eq("action_type", input.actionType);
+    if (error) {
+      throw new Error(`公开展示互动取消失败: ${error.message}`);
+    }
+  }
+
+  return getShowcaseInteractionSummary(target.showcaseKey);
+}
+
+export async function getShowcaseInteractionStatsByProjectIds(projectIds: string[]) {
+  const safeIds = Array.from(new Set(projectIds.filter(Boolean)));
+  if (safeIds.length === 0) {
+    return {};
+  }
+
+  const supabase = getSupabaseServerClient();
+  const { data, error } = await supabase
+    .from("showcase_interactions")
+    .select("project_id,action_type,created_at")
+    .in("project_id", safeIds)
+    .order("created_at", { ascending: false });
+
+  if (error) {
+    throw new Error(`公开展示互动统计读取失败: ${error.message}`);
+  }
+
+  const stats: Record<
+    string,
+    {
+      likes: number;
+      watchers: number;
+      latestInteractionAt: string | null;
+    }
+  > = {};
+
+  for (const projectId of safeIds) {
+    stats[projectId] = {
+      likes: 0,
+      watchers: 0,
+      latestInteractionAt: null
+    };
+  }
+
+  for (const row of data || []) {
+    if (!row.project_id || !stats[row.project_id]) continue;
+    if (row.action_type === "like") stats[row.project_id].likes += 1;
+    if (row.action_type === "watch") stats[row.project_id].watchers += 1;
+    if (!stats[row.project_id].latestInteractionAt) {
+      stats[row.project_id].latestInteractionAt = row.created_at;
+    }
+  }
+
+  return stats;
+}
+
+export async function createProjectForCurrentVisitor(input: {
   status: ProjectStatus;
   payload: ProjectFormPayload;
 }) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   const { data, error } = await supabase
     .from("projects")
     .insert({
-      user_id: demoUser.id,
+      user_id: currentVisitorUser.id,
       status: input.status,
       ...input.payload
     })
@@ -156,6 +330,13 @@ export async function createProjectForDemoUser(input: {
   }
 
   return data;
+}
+
+export async function createProjectForDemoUser(input: {
+  status: ProjectStatus;
+  payload: ProjectFormPayload;
+}) {
+  return createProjectForCurrentVisitor(input);
 }
 
 function normalizePayloadValue(value: string | null) {
@@ -338,7 +519,7 @@ async function runGenerationLifecycleForProject(input: {
       });
       await updateProjectStatus(input.projectId, "ready");
       usedFallbackOutput = true;
-      warning = "AI 生成暂时失败，当前为自动回退结果，建议稍后重新生成。";
+      warning = "当前先保留一版可继续判断的结果，建议稍后重新整理。";
     } catch {
       await updateProjectStatus(input.projectId, "failed");
       throw new Error("项目方案生成失败，请稍后重试。");
@@ -348,11 +529,11 @@ async function runGenerationLifecycleForProject(input: {
   return { usedFallbackOutput, warning };
 }
 
-export async function createProjectAndMaybeOutputForDemoUser(input: {
+export async function createProjectAndMaybeOutputForCurrentVisitor(input: {
   status: ProjectStatus;
   payload: ProjectFormPayload;
 }) {
-  const createdProject = await createProjectForDemoUser(input);
+  const createdProject = await createProjectForCurrentVisitor(input);
   let usedFallbackOutput = false;
   let warning: string | null = null;
 
@@ -373,16 +554,27 @@ export async function createProjectAndMaybeOutputForDemoUser(input: {
   };
 }
 
-export async function regenerateProjectOutputForDemoUser(projectId: string) {
-  return regenerateProjectOutputByModeForDemoUser({ projectId });
+export async function createProjectAndMaybeOutputForDemoUser(input: {
+  status: ProjectStatus;
+  payload: ProjectFormPayload;
+}) {
+  return createProjectAndMaybeOutputForCurrentVisitor(input);
 }
 
-export async function regenerateProjectOutputByModeForDemoUser(input: {
+export async function regenerateProjectOutputForCurrentVisitor(projectId: string) {
+  return regenerateProjectOutputByModeForCurrentVisitor({ projectId });
+}
+
+export async function regenerateProjectOutputForDemoUser(projectId: string) {
+  return regenerateProjectOutputForCurrentVisitor(projectId);
+}
+
+export async function regenerateProjectOutputByModeForCurrentVisitor(input: {
   projectId: string;
   mode?: GenerationMode;
 }) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   const { data: projectData, error: projectError } = await supabase
     .from("projects")
@@ -390,7 +582,7 @@ export async function regenerateProjectOutputByModeForDemoUser(input: {
       "id,user_id,title,category,style,size_target,size_note,audience,description,must_have_elements,avoid_elements,build_goal,collaboration_goal,willing_creator_plan,willing_sampling,reference_links,notes_for_factory"
     )
     .eq("id", input.projectId)
-    .eq("user_id", demoUser.id)
+    .eq("user_id", currentVisitorUser.id)
     .maybeSingle();
 
   if (projectError) {
@@ -409,30 +601,109 @@ export async function regenerateProjectOutputByModeForDemoUser(input: {
   });
 }
 
-export async function listProjectsByDemoUser() {
+export async function regenerateProjectOutputByModeForDemoUser(input: {
+  projectId: string;
+  mode?: GenerationMode;
+}) {
+  return regenerateProjectOutputByModeForCurrentVisitor(input);
+}
+
+export async function listProjectsForCurrentVisitor() {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   const { data, error } = await supabase
     .from("projects")
     .select("id,user_id,title,status,updated_at,category,notes_for_factory")
-    .eq("user_id", demoUser.id)
+    .eq("user_id", currentVisitorUser.id)
     .order("updated_at", { ascending: false });
 
   if (error) {
     throw new Error(`项目读取失败: ${error.message}`);
   }
 
-  return (data ?? []) as ProjectRow[];
+  const projectRows = (data ?? []) as ProjectRow[];
+  const projectIds = projectRows.map((item) => item.id);
+
+  if (projectIds.length === 0) return projectRows;
+
+  const { data: intentRows, error: intentError } = await supabase
+    .from("intent_orders")
+    .select("id,project_id,source_type,status,updated_at,operator_note")
+    .eq("user_id", currentVisitorUser.id)
+    .in("project_id", projectIds)
+    .order("updated_at", { ascending: false });
+
+  if (intentError) {
+    throw new Error(`项目关联推进意向读取失败: ${intentError.message}`);
+  }
+
+  const latestIntentIds = (intentRows || []).map((row) => row.id);
+  let quoteMap: Record<string, { quote_status: string; version: number }> = {};
+
+  if (latestIntentIds.length > 0) {
+    const { data: quoteRows, error: quoteError } = await supabase
+      .from("quote_sheets")
+      .select("intent_id,quote_status,version")
+      .in("intent_id", latestIntentIds)
+      .order("version", { ascending: false });
+
+    if (quoteError) {
+      throw new Error(`项目关联报价说明读取失败: ${quoteError.message}`);
+    }
+
+    const quoteByIntent: Record<string, { quote_status: string; version: number }> = {};
+    for (const row of quoteRows || []) {
+      if (row.intent_id && !quoteByIntent[row.intent_id]) {
+        quoteByIntent[row.intent_id] = {
+          quote_status: row.quote_status,
+          version: row.version
+        };
+      }
+    }
+    quoteMap = quoteByIntent;
+  }
+
+  const intentMap: Record<
+    string,
+    {
+      id: string;
+      source_type: string;
+      status: string;
+      updated_at: string;
+      latest_quote_status?: string | null;
+      latest_quote_version?: number | null;
+      showcase_control?: ShowcaseDisplayControl | null;
+    }
+  > = {};
+  for (const row of intentRows || []) {
+    if (row.project_id && !intentMap[row.project_id]) {
+      intentMap[row.project_id] = {
+        ...row,
+        latest_quote_status: quoteMap[row.id]?.quote_status || null,
+        latest_quote_version: quoteMap[row.id]?.version ?? null,
+        showcase_control: parseShowcaseDisplayControl(row.operator_note)
+      };
+    }
+  }
+
+  return projectRows.map((item) => ({
+    ...item,
+    linked_intent: intentMap[item.id] || null
+  }));
 }
 
-export async function createQuickProjectForDemoUser(input: {
+export async function listProjectsByDemoUser() {
+  return listProjectsForCurrentVisitor();
+}
+
+export async function createQuickProjectForCurrentVisitor(input: {
   quickInput: QuickEntryInput;
   quickResult: QuickEntryResult;
   textWarning?: string;
 }) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
   const title = normalizeQuickProjectTitle({
     conceptTitle: input.quickResult.conceptTitle,
     rawIdea: input.quickInput.idea
@@ -449,7 +720,7 @@ export async function createQuickProjectForDemoUser(input: {
   const { data, error } = await supabase
     .from("projects")
     .insert({
-      user_id: demoUser.id,
+      user_id: currentVisitorUser.id,
       title,
       status: "ready",
       category: "quick_entry",
@@ -479,14 +750,22 @@ export async function createQuickProjectForDemoUser(input: {
   return data;
 }
 
-export async function updateQuickProjectResultForDemoUser(input: {
+export async function createQuickProjectForDemoUser(input: {
+  quickInput: QuickEntryInput;
+  quickResult: QuickEntryResult;
+  textWarning?: string;
+}) {
+  return createQuickProjectForCurrentVisitor(input);
+}
+
+export async function updateQuickProjectResultForCurrentVisitor(input: {
   projectId: string;
   quickInput: QuickEntryInput;
   quickResult: QuickEntryResult;
   textWarning?: string;
 }) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
   const title = normalizeQuickProjectTitle({
     conceptTitle: input.quickResult.conceptTitle,
     rawIdea: input.quickInput.idea
@@ -496,7 +775,7 @@ export async function updateQuickProjectResultForDemoUser(input: {
     .from("projects")
     .select("id,user_id,category,notes_for_factory")
     .eq("id", input.projectId)
-    .eq("user_id", demoUser.id)
+    .eq("user_id", currentVisitorUser.id)
     .eq("category", "quick_entry")
     .maybeSingle();
 
@@ -538,7 +817,7 @@ export async function updateQuickProjectResultForDemoUser(input: {
       notes_for_factory: encodeQuickProjectData(nextData)
     })
     .eq("id", input.projectId)
-    .eq("user_id", demoUser.id);
+    .eq("user_id", currentVisitorUser.id);
 
   if (updateError) {
     throw new Error(`轻量项目结果更新失败: ${updateError.message}`);
@@ -547,15 +826,24 @@ export async function updateQuickProjectResultForDemoUser(input: {
   return { id: input.projectId };
 }
 
-export async function getQuickProjectByIdForDemoUser(projectId: string) {
+export async function updateQuickProjectResultForDemoUser(input: {
+  projectId: string;
+  quickInput: QuickEntryInput;
+  quickResult: QuickEntryResult;
+  textWarning?: string;
+}) {
+  return updateQuickProjectResultForCurrentVisitor(input);
+}
+
+export async function getQuickProjectByIdForCurrentVisitor(projectId: string) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   const { data, error } = await supabase
     .from("projects")
     .select("id,user_id,title,status,updated_at,category,notes_for_factory")
     .eq("id", projectId)
-    .eq("user_id", demoUser.id)
+    .eq("user_id", currentVisitorUser.id)
     .eq("category", "quick_entry")
     .maybeSingle();
 
@@ -580,20 +868,24 @@ export async function getQuickProjectByIdForDemoUser(projectId: string) {
   };
 }
 
-export async function updateQuickProjectImageForDemoUser(input: {
+export async function getQuickProjectByIdForDemoUser(projectId: string) {
+  return getQuickProjectByIdForCurrentVisitor(projectId);
+}
+
+export async function updateQuickProjectImageForCurrentVisitor(input: {
   projectId: string;
   idea?: string;
   previewImageUrl?: string | null;
   imageWarning?: string;
 }) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   const { data, error } = await supabase
     .from("projects")
     .select("id,user_id,category,notes_for_factory")
     .eq("id", input.projectId)
-    .eq("user_id", demoUser.id)
+    .eq("user_id", currentVisitorUser.id)
     .eq("category", "quick_entry")
     .maybeSingle();
 
@@ -623,22 +915,31 @@ export async function updateQuickProjectImageForDemoUser(input: {
     .from("projects")
     .update({ notes_for_factory: encodeQuickProjectData(nextData) })
     .eq("id", input.projectId)
-    .eq("user_id", demoUser.id);
+    .eq("user_id", currentVisitorUser.id);
 
   if (updateError) {
     throw new Error(`轻量项目预览图更新失败: ${updateError.message}`);
   }
 }
 
+export async function updateQuickProjectImageForDemoUser(input: {
+  projectId: string;
+  idea?: string;
+  previewImageUrl?: string | null;
+  imageWarning?: string;
+}) {
+  return updateQuickProjectImageForCurrentVisitor(input);
+}
+
 export async function getProjectWithOutputById(projectId: string) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   const { data: projectData, error: projectError } = await supabase
     .from("projects")
-    .select("id,user_id,title,category,style,size_target,audience,status,updated_at")
+    .select("id,user_id,title,category,style,size_target,audience,status,updated_at,notes_for_factory")
     .eq("id", projectId)
-    .eq("user_id", demoUser.id)
+    .eq("user_id", currentVisitorUser.id)
     .maybeSingle();
 
   if (projectError) {
@@ -661,21 +962,122 @@ export async function getProjectWithOutputById(projectId: string) {
     throw new Error(`项目结果读取失败: ${outputError.message}`);
   }
 
+  const { data: intentRows, error: intentError } = await supabase
+    .from("intent_orders")
+    .select("id,project_id,source_type,status,updated_at,operator_note")
+    .eq("user_id", currentVisitorUser.id)
+    .eq("project_id", projectId)
+    .order("updated_at", { ascending: false });
+
+  if (intentError) {
+    throw new Error(`项目关联推进意向读取失败: ${intentError.message}`);
+  }
+
+  const latestIntent = intentRows?.[0] || null;
+  let linkedIntentWithSummary: ProjectDetailRow["linked_intent"] = latestIntent;
+  let allLinkedIntentSummaries: NonNullable<ProjectDetailRow["all_linked_intents"]> = [];
+
+  if (intentRows && intentRows.length > 0) {
+    const intentIds = intentRows.map((item) => item.id);
+    const [{ data: latestQuoteRows, error: latestQuoteError }, { data: followupRows, error: followupError }] =
+      await Promise.all([
+        supabase
+          .from("quote_sheets")
+          .select("intent_id,quote_status,version,created_at")
+          .in("intent_id", intentIds)
+          .order("version", { ascending: false }),
+        supabase
+          .from("intent_followups")
+          .select("id,intent_id,action_type,content,from_status,to_status,created_at")
+          .in("intent_id", intentIds)
+          .order("created_at", { ascending: false })
+      ]);
+
+    if (latestQuoteError) {
+      throw new Error(`项目关联报价读取失败: ${latestQuoteError.message}`);
+    }
+
+    if (followupError) {
+      throw new Error(`项目关联推进动态读取失败: ${followupError.message}`);
+    }
+
+    const quoteMap: Record<string, { quote_status: string; version: number }> = {};
+    for (const row of latestQuoteRows || []) {
+      if (row.intent_id && !quoteMap[row.intent_id]) {
+        quoteMap[row.intent_id] = {
+          quote_status: row.quote_status,
+          version: row.version
+        };
+      }
+    }
+
+    const followupMap: Record<
+      string,
+      Array<{
+        id: string;
+        action_type: string | null;
+        content: string | null;
+        from_status?: string | null;
+        to_status?: string | null;
+        created_at: string;
+      }>
+    > = {};
+
+    for (const row of followupRows || []) {
+      if (!row.intent_id) continue;
+      if (!followupMap[row.intent_id]) {
+        followupMap[row.intent_id] = [];
+      }
+      if (followupMap[row.intent_id].length < 3) {
+        followupMap[row.intent_id].push({
+          id: row.id,
+          action_type: row.action_type,
+          content: row.content,
+          from_status: row.from_status,
+          to_status: row.to_status,
+          created_at: row.created_at
+        });
+      }
+    }
+
+    allLinkedIntentSummaries = intentRows.map((item) => ({
+      ...item,
+      latest_quote_status: quoteMap[item.id]?.quote_status ?? null,
+      latest_quote_version: quoteMap[item.id]?.version ?? null,
+      showcase_control: parseShowcaseDisplayControl(item.operator_note),
+      latest_followup: followupMap[item.id]?.[0] || null
+    }));
+
+    if (latestIntent) {
+      linkedIntentWithSummary = {
+        ...latestIntent,
+        latest_quote_status: quoteMap[latestIntent.id]?.quote_status ?? null,
+        latest_quote_version: quoteMap[latestIntent.id]?.version ?? null,
+        showcase_control: parseShowcaseDisplayControl(latestIntent.operator_note),
+        recent_followups: followupMap[latestIntent.id] ?? []
+      };
+    }
+  }
+
   return {
-    project: projectData as ProjectDetailRow,
+    project: {
+      ...(projectData as ProjectDetailRow),
+      linked_intent: linkedIntentWithSummary,
+      all_linked_intents: allLinkedIntentSummaries
+    },
     output: (outputData as ProjectOutputRow | null) ?? null
   };
 }
 
-export async function createServiceRequestForDemoUser(input: CreateServiceRequestInput) {
+export async function createServiceRequestForCurrentVisitor(input: CreateServiceRequestInput) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   const { data, error } = await supabase
     .from("service_requests")
     .insert({
       project_id: input.projectId,
-      user_id: demoUser.id,
+      user_id: currentVisitorUser.id,
       request_type: input.requestType,
       contact_info: input.contactInfo,
       request_note: input.requestNote,
@@ -691,18 +1093,180 @@ export async function createServiceRequestForDemoUser(input: CreateServiceReques
   return data;
 }
 
-export async function updateManualEditForDemoUser(input: {
+export async function createServiceRequestForDemoUser(input: CreateServiceRequestInput) {
+  return createServiceRequestForCurrentVisitor(input);
+}
+
+export async function listServiceRequestsForCurrentVisitor(input?: { status?: string; limit?: number; offset?: number }) {
+  const supabase = getSupabaseServerClient();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
+  const limit = Math.max(1, Math.min(input?.limit || 20, 100));
+  const offset = Math.max(0, input?.offset || 0);
+
+  let query = supabase
+    .from("service_requests")
+    .select("id,project_id,user_id,request_type,contact_info,request_note,metadata,status,operator_note,handled_by,responded_at,created_at,updated_at", {
+      count: "exact"
+    })
+    .eq("user_id", currentVisitorUser.id)
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (input?.status?.trim()) {
+    query = query.eq("status", ensureServiceRequestStatus(input.status.trim()));
+  }
+
+  const { data, error, count } = await query;
+  if (error) throw new Error(`服务申请列表读取失败: ${error.message}`);
+
+  const projectIds = Array.from(new Set((data || []).map((item) => item.project_id).filter(Boolean)));
+  let projectTitleMap: Record<string, string | null> = {};
+  if (projectIds.length > 0) {
+    const { data: projects, error: projectError } = await supabase
+      .from("projects")
+      .select("id,title")
+      .in("id", projectIds);
+    if (projectError) throw new Error(`服务申请关联项目读取失败: ${projectError.message}`);
+    projectTitleMap = Object.fromEntries((projects || []).map((item) => [item.id, item.title]));
+  }
+
+  return {
+    items: (data || []).map((item) => ({
+      ...(item as ServiceRequestRow),
+      project_title: projectTitleMap[item.project_id] ?? null
+    })),
+    total: count || 0,
+    limit,
+    offset,
+    hasMore: offset + (data?.length || 0) < (count || 0)
+  };
+}
+
+export async function listServiceRequestsForDemoUser(input?: { status?: string; limit?: number; offset?: number }) {
+  return listServiceRequestsForCurrentVisitor(input);
+}
+
+export async function listServiceRequestsForAdmin(input: {
+  status?: string;
+  keyword?: string;
+  limit?: number;
+  offset?: number;
+  adminToken?: string | null;
+}) {
+  ensureAdminApiToken(input.adminToken || null);
+  const supabase = getSupabaseServerClient();
+  const limit = Math.max(1, Math.min(input.limit || 30, 200));
+  const offset = Math.max(0, input.offset || 0);
+
+  let query = supabase
+    .from("service_requests")
+    .select("id,project_id,user_id,request_type,contact_info,request_note,metadata,status,operator_note,handled_by,responded_at,created_at,updated_at", {
+      count: "exact"
+    })
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
+
+  if (input.status?.trim()) {
+    query = query.eq("status", ensureServiceRequestStatus(input.status.trim()));
+  }
+
+  const { data, error, count } = await query;
+  if (error) throw new Error(`管理端服务申请列表读取失败: ${error.message}`);
+
+  const projectIds = Array.from(new Set((data || []).map((item) => item.project_id).filter(Boolean)));
+  let projectTitleMap: Record<string, string | null> = {};
+  if (projectIds.length > 0) {
+    const { data: projects, error: projectError } = await supabase
+      .from("projects")
+      .select("id,title")
+      .in("id", projectIds);
+    if (projectError) throw new Error(`管理端服务申请关联项目读取失败: ${projectError.message}`);
+    projectTitleMap = Object.fromEntries((projects || []).map((item) => [item.id, item.title]));
+  }
+
+  let items = (data || []).map((item) => ({
+    ...(item as ServiceRequestRow),
+    project_title: projectTitleMap[item.project_id] ?? null
+  }));
+
+  if (input.keyword?.trim()) {
+    const keyword = input.keyword.trim().toLowerCase();
+    items = items.filter(
+      (item) =>
+        item.id.toLowerCase().includes(keyword) ||
+        item.contact_info.toLowerCase().includes(keyword) ||
+        (item.project_title || "").toLowerCase().includes(keyword)
+    );
+  }
+
+  return {
+    items,
+    total: input.keyword?.trim() ? items.length : count || 0,
+    limit,
+    offset,
+    hasMore: offset + items.length < (input.keyword?.trim() ? items.length : count || 0)
+  };
+}
+
+export async function updateServiceRequestStatusForAdmin(input: {
+  requestId: string;
+  toStatus: string;
+  note?: string;
+  adminToken?: string | null;
+  actorId?: string;
+}) {
+  ensureAdminApiToken(input.adminToken || null);
+  const supabase = getSupabaseServerClient();
+  const toStatus = ensureServiceRequestStatus(input.toStatus.trim());
+
+  const { data, error } = await supabase
+    .from("service_requests")
+    .select("id,status")
+    .eq("id", input.requestId)
+    .maybeSingle();
+  if (error) throw new Error(`服务申请读取失败: ${error.message}`);
+  if (!data) throw new Error("服务申请不存在");
+
+  const updatePayload: {
+    status: ServiceRequestStatus;
+    operator_note: string | null;
+    handled_by: string;
+    responded_at?: string | null;
+  } = {
+    status: toStatus,
+    operator_note: (input.note || "").trim() || null,
+    handled_by: input.actorId || "admin"
+  };
+
+  if (toStatus === "responded" || toStatus === "converted" || toStatus === "closed") {
+    updatePayload.responded_at = new Date().toISOString();
+  }
+
+  const { error: updateError } = await supabase
+    .from("service_requests")
+    .update(updatePayload)
+    .eq("id", input.requestId);
+  if (updateError) throw new Error(`服务申请状态更新失败: ${updateError.message}`);
+
+  return {
+    requestId: input.requestId,
+    fromStatus: data.status,
+    toStatus
+  };
+}
+
+export async function updateManualEditForCurrentVisitor(input: {
   projectId: string;
   manualEditContent: string;
 }) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   const { data: projectData, error: projectError } = await supabase
     .from("projects")
     .select("id,user_id")
     .eq("id", input.projectId)
-    .eq("user_id", demoUser.id)
+    .eq("user_id", currentVisitorUser.id)
     .maybeSingle();
 
   if (projectError) {
@@ -728,10 +1292,11 @@ export async function updateManualEditForDemoUser(input: {
   }
 }
 
-function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    value
-  );
+export async function updateManualEditForDemoUser(input: {
+  projectId: string;
+  manualEditContent: string;
+}) {
+  return updateManualEditForCurrentVisitor(input);
 }
 
 const VALID_INTENT_STATUSES: IntentStatus[] = [
@@ -742,6 +1307,9 @@ const VALID_INTENT_STATUSES: IntentStatus[] = [
   "quoted",
   "deposit_pending",
   "locked",
+  "preparing_delivery",
+  "delivering",
+  "delivered",
   "closed_won",
   "closed_lost"
 ];
@@ -760,6 +1328,14 @@ const VALID_QUOTE_STATUSES: QuoteStatus[] = [
   "expired",
   "replaced",
   "converted_to_order"
+];
+
+const VALID_SERVICE_REQUEST_STATUSES: ServiceRequestStatus[] = [
+  "pending",
+  "reviewing",
+  "responded",
+  "converted",
+  "closed"
 ];
 
 function ensureIntentStatus(input: string): IntentStatus {
@@ -783,9 +1359,16 @@ function ensureQuoteStatus(input: string): QuoteStatus {
   return input as QuoteStatus;
 }
 
-export async function createIntentForDemoUser(input: CreateIntentInput) {
+function ensureServiceRequestStatus(input: string): ServiceRequestStatus {
+  if (!VALID_SERVICE_REQUEST_STATUSES.includes(input as ServiceRequestStatus)) {
+    throw new Error("服务申请状态不合法");
+  }
+  return input as ServiceRequestStatus;
+}
+
+export async function createIntentForCurrentVisitor(input: CreateIntentInput) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   if (!input.contactPhoneOrWechat?.trim()) {
     throw new Error("请填写手机号或微信");
@@ -799,7 +1382,7 @@ export async function createIntentForDemoUser(input: CreateIntentInput) {
       .from("projects")
       .select("id,user_id")
       .eq("id", input.projectId)
-      .eq("user_id", demoUser.id)
+      .eq("user_id", currentVisitorUser.id)
       .maybeSingle();
     if (projectError) throw new Error(`项目校验失败: ${projectError.message}`);
     if (!projectData) throw new Error("项目不存在或无权限创建该意向单");
@@ -809,7 +1392,7 @@ export async function createIntentForDemoUser(input: CreateIntentInput) {
     .from("intent_orders")
     .insert({
       project_id: input.projectId?.trim() || null,
-      user_id: demoUser.id,
+      user_id: currentVisitorUser.id,
       source_type: ensureSourceType(input.sourceType),
       status: "new",
       priority: "normal",
@@ -858,9 +1441,13 @@ export async function createIntentForDemoUser(input: CreateIntentInput) {
   return intentData;
 }
 
-export async function listIntentsForDemoUser(input?: { limit?: number; offset?: number; status?: string }) {
+export async function createIntentForDemoUser(input: CreateIntentInput) {
+  return createIntentForCurrentVisitor(input);
+}
+
+export async function listIntentsForCurrentVisitor(input?: { limit?: number; offset?: number; status?: string }) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
   const limit = Math.max(1, Math.min(input?.limit || 20, 100));
   const offset = Math.max(0, input?.offset || 0);
 
@@ -869,7 +1456,7 @@ export async function listIntentsForDemoUser(input?: { limit?: number; offset?: 
     .select("id,project_id,source_type,status,priority,contact_phone_or_wechat,created_at,updated_at", {
       count: "exact"
     })
-    .eq("user_id", demoUser.id)
+    .eq("user_id", currentVisitorUser.id)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
 
@@ -882,22 +1469,58 @@ export async function listIntentsForDemoUser(input?: { limit?: number; offset?: 
 
   const ids = (data || []).map((item) => item.id);
   let snapshotMap: Record<string, unknown> = {};
+  let followupMap: Record<string, unknown> = {};
+  let quoteMap: Record<string, unknown> = {};
   if (ids.length > 0) {
-    const { data: snapshots, error: snapshotError } = await supabase
-      .from("intent_snapshots")
-      .select("intent_id,project_title,estimated_total_price_min,estimated_total_price_max,created_at")
-      .in("intent_id", ids)
-      .order("created_at", { ascending: false });
+    const [
+      { data: snapshots, error: snapshotError },
+      { data: followups, error: followupError },
+      { data: quoteRows, error: quoteError }
+    ] = await Promise.all([
+      supabase
+        .from("intent_snapshots")
+        .select("intent_id,project_title,estimated_total_price_min,estimated_total_price_max,created_at")
+        .in("intent_id", ids)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("intent_followups")
+        .select("intent_id,action_type,content,from_status,to_status,created_at")
+        .in("intent_id", ids)
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("quote_sheets")
+        .select("intent_id,quote_status,version,created_at")
+        .in("intent_id", ids)
+        .order("version", { ascending: false })
+    ]);
     if (snapshotError) throw new Error(`意向快照列表读取失败: ${snapshotError.message}`);
-    const map: Record<string, unknown> = {};
+    if (followupError) throw new Error(`意向跟进列表读取失败: ${followupError.message}`);
+    if (quoteError) throw new Error(`意向报价列表读取失败: ${quoteError.message}`);
+    const snapshotByIntent: Record<string, unknown> = {};
     for (const row of snapshots || []) {
-      if (!map[row.intent_id]) map[row.intent_id] = row;
+      if (!snapshotByIntent[row.intent_id]) snapshotByIntent[row.intent_id] = row;
     }
-    snapshotMap = map;
+    snapshotMap = snapshotByIntent;
+    const followupByIntent: Record<string, unknown> = {};
+    for (const row of followups || []) {
+      if (!followupByIntent[row.intent_id]) followupByIntent[row.intent_id] = row;
+    }
+    followupMap = followupByIntent;
+    const quoteByIntent: Record<string, unknown> = {};
+    for (const row of quoteRows || []) {
+      if (!quoteByIntent[row.intent_id]) quoteByIntent[row.intent_id] = row;
+    }
+    quoteMap = quoteByIntent;
   }
 
   return {
-    items: (data || []).map((item) => ({ ...item, latest_snapshot: snapshotMap[item.id] || null })),
+    items: (data || []).map((item) => ({
+      ...item,
+      latest_snapshot: snapshotMap[item.id] || null,
+      latest_followup: followupMap[item.id] || null,
+      latest_quote_status: (quoteMap[item.id] as { quote_status?: string } | undefined)?.quote_status || null,
+      latest_quote_version: (quoteMap[item.id] as { version?: number } | undefined)?.version ?? null
+    })),
     total: count || 0,
     limit,
     offset,
@@ -905,15 +1528,19 @@ export async function listIntentsForDemoUser(input?: { limit?: number; offset?: 
   };
 }
 
-export async function getIntentDetailForDemoUser(intentId: string) {
+export async function listIntentsForDemoUser(input?: { limit?: number; offset?: number; status?: string }) {
+  return listIntentsForCurrentVisitor(input);
+}
+
+export async function getIntentDetailForCurrentVisitor(intentId: string) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   const { data: intentData, error: intentError } = await supabase
     .from("intent_orders")
     .select("*")
     .eq("id", intentId)
-    .eq("user_id", demoUser.id)
+    .eq("user_id", currentVisitorUser.id)
     .maybeSingle();
   if (intentError) throw new Error(`意向单详情读取失败: ${intentError.message}`);
   if (!intentData) return null;
@@ -949,9 +1576,13 @@ export async function getIntentDetailForDemoUser(intentId: string) {
   };
 }
 
-export async function acceptQuoteForDemoUser(input: { quoteId: string }) {
+export async function getIntentDetailForDemoUser(intentId: string) {
+  return getIntentDetailForCurrentVisitor(intentId);
+}
+
+export async function acceptQuoteForCurrentVisitor(input: { quoteId: string }) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   const { data: quoteData, error: quoteError } = await supabase
     .from("quote_sheets")
@@ -969,7 +1600,7 @@ export async function acceptQuoteForDemoUser(input: { quoteId: string }) {
     .from("intent_orders")
     .select("id,user_id,status")
     .eq("id", quoteData.intent_id)
-    .eq("user_id", demoUser.id)
+    .eq("user_id", currentVisitorUser.id)
     .maybeSingle();
   if (intentError) throw new Error(`意向单校验失败: ${intentError.message}`);
   if (!intentData) throw new Error("意向单不存在或无权限");
@@ -992,14 +1623,18 @@ export async function acceptQuoteForDemoUser(input: { quoteId: string }) {
     from_status: intentData.status,
     to_status: "deposit_pending",
     content: "用户确认报价，等待定金锁单",
-    actor_id: demoUser.id
+    actor_id: currentVisitorUser.id
   });
   if (followupError) throw new Error(`跟进记录写入失败: ${followupError.message}`);
 
   return { quoteId: input.quoteId, intentId: intentData.id };
 }
 
-export async function submitDepositForDemoUser(input: {
+export async function acceptQuoteForDemoUser(input: { quoteId: string }) {
+  return acceptQuoteForCurrentVisitor(input);
+}
+
+export async function submitDepositForCurrentVisitor(input: {
   intentId: string;
   amount: number;
   paymentChannel?: string;
@@ -1007,13 +1642,13 @@ export async function submitDepositForDemoUser(input: {
   voucherUrl?: string;
 }) {
   const supabase = getSupabaseServerClient();
-  const demoUser = await ensureDemoUser();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
 
   const { data: intentData, error: intentError } = await supabase
     .from("intent_orders")
     .select("id,user_id,status")
     .eq("id", input.intentId)
-    .eq("user_id", demoUser.id)
+    .eq("user_id", currentVisitorUser.id)
     .maybeSingle();
   if (intentError) throw new Error(`意向单校验失败: ${intentError.message}`);
   if (!intentData) throw new Error("意向单不存在或无权限");
@@ -1045,11 +1680,21 @@ export async function submitDepositForDemoUser(input: {
     from_status: "deposit_pending",
     to_status: "locked",
     content: segments.join("；"),
-    actor_id: demoUser.id
+    actor_id: currentVisitorUser.id
   });
   if (followupError) throw new Error(`定金记录写入失败: ${followupError.message}`);
 
   return { intentId: input.intentId, fromStatus: "deposit_pending", toStatus: "locked" as const };
+}
+
+export async function submitDepositForDemoUser(input: {
+  intentId: string;
+  amount: number;
+  paymentChannel?: string;
+  voucherNote?: string;
+  voucherUrl?: string;
+}) {
+  return submitDepositForCurrentVisitor(input);
 }
 
 function ensureAdminApiToken(requestToken: string | null) {
@@ -1198,6 +1843,58 @@ export async function updateIntentStatusForAdmin(input: {
   if (followupError) throw new Error(`跟进记录写入失败: ${followupError.message}`);
 
   return { intentId: input.intentId, fromStatus: intentData.status, toStatus };
+}
+
+export async function updateIntentShowcaseControlForAdmin(input: {
+  intentId: string;
+  control: Partial<ShowcaseDisplayControl>;
+  adminToken?: string | null;
+  actorId?: string;
+}) {
+  ensureAdminApiToken(input.adminToken || null);
+  const supabase = getSupabaseServerClient();
+
+  const { data: intentData, error: intentError } = await supabase
+    .from("intent_orders")
+    .select("id,source_type,operator_note")
+    .eq("id", input.intentId)
+    .maybeSingle();
+
+  if (intentError) throw new Error(`公开展示控制读取失败: ${intentError.message}`);
+  if (!intentData) throw new Error("推进意向不存在");
+  if (intentData.source_type !== "crowdfunding") throw new Error("只有公开展示路径可以调整展示控制");
+
+  const currentControl = parseShowcaseDisplayControl(intentData.operator_note);
+  const nextControl: ShowcaseDisplayControl = {
+    featured: input.control.featured ?? currentControl.featured,
+    homepage: input.control.homepage ?? currentControl.homepage,
+    paused: input.control.paused ?? currentControl.paused
+  };
+
+  const operatorNote = upsertShowcaseDisplayControl(intentData.operator_note, nextControl);
+
+  const { error: updateError } = await supabase
+    .from("intent_orders")
+    .update({ operator_note: operatorNote })
+    .eq("id", input.intentId);
+
+  if (updateError) throw new Error(`公开展示控制更新失败: ${updateError.message}`);
+
+  const content = `公开展示控制已更新：${formatShowcaseDisplayControl(nextControl)}`;
+  const { error: followupError } = await supabase.from("intent_followups").insert({
+    intent_id: input.intentId,
+    action_type: "showcase_control",
+    content,
+    actor_id: input.actorId || "admin"
+  });
+
+  if (followupError) throw new Error(`公开展示动态写入失败: ${followupError.message}`);
+
+  return {
+    intentId: input.intentId,
+    control: nextControl,
+    summary: formatShowcaseDisplayControl(nextControl)
+  };
 }
 
 export async function appendIntentFollowupForAdmin(input: {
@@ -1353,16 +2050,45 @@ export async function updateQuoteStatusForAdmin(input: {
   if (quoteError) throw new Error(`报价单读取失败: ${quoteError.message}`);
   if (!quoteData) throw new Error("报价单不存在");
 
+  const { data: intentData, error: intentError } = await supabase
+    .from("intent_orders")
+    .select("id,status")
+    .eq("id", quoteData.intent_id)
+    .maybeSingle();
+  if (intentError) throw new Error(`意向单读取失败: ${intentError.message}`);
+  if (!intentData) throw new Error("关联意向单不存在");
+
   const { error: updateError } = await supabase
     .from("quote_sheets")
     .update({ quote_status: toStatus })
     .eq("id", input.quoteId);
   if (updateError) throw new Error(`报价单状态更新失败: ${updateError.message}`);
 
+  let nextIntentStatus: IntentStatus | null = null;
+  if (toStatus === "accepted") {
+    nextIntentStatus = "deposit_pending";
+  } else if ((toStatus === "sent" || toStatus === "draft") && intentData.status !== "quoted") {
+    nextIntentStatus = "quoted";
+  }
+
+  if (nextIntentStatus && nextIntentStatus !== intentData.status) {
+    const { error: updateIntentError } = await supabase
+      .from("intent_orders")
+      .update({ status: nextIntentStatus })
+      .eq("id", quoteData.intent_id);
+    if (updateIntentError) throw new Error(`意向单状态同步失败: ${updateIntentError.message}`);
+  }
+
   const { error: followupError } = await supabase.from("intent_followups").insert({
     intent_id: quoteData.intent_id,
     action_type: "quote_status_change",
-    content: (input.note || "").trim() || `报价单状态更新为 ${toStatus}`,
+    from_status: intentData.status,
+    to_status: nextIntentStatus || intentData.status,
+    content:
+      (input.note || "").trim() ||
+      (nextIntentStatus && nextIntentStatus !== intentData.status
+        ? `报价单状态更新为 ${toStatus}，意向阶段同步为 ${nextIntentStatus}`
+        : `报价单状态更新为 ${toStatus}`),
     actor_id: input.actorId || "admin"
   });
   if (followupError) throw new Error(`跟进记录写入失败: ${followupError.message}`);

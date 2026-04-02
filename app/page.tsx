@@ -1,161 +1,223 @@
 import Link from "next/link";
-import { getFeaturedShowcaseProjects } from "@/data/showcase-projects";
+import ShowcaseVisual from "@/components/showcase-visual";
+import {
+  getFeaturedShowcaseProjects,
+  type ShowcaseCategory,
+  type ShowcaseJudgement
+} from "@/data/showcase-projects";
+import {
+  mapIntentSourceTypeToJudgement,
+  mapProjectWithIntentToUnifiedStage
+} from "@/lib/project-language";
+import { mapProjectCategoryToShowcaseCategory } from "@/lib/showcase-category";
+import { getQuickProjectPreviewImageUrl, listProjectsForCurrentVisitor } from "@/services/project-service";
+import type { ProjectRow } from "@/types/project";
 
-const featuredProjects = getFeaturedShowcaseProjects(6);
+type LandingCardItem = {
+  id: string;
+  title: string;
+  category: ShowcaseCategory;
+  stage: string;
+  judgement: ShowcaseJudgement;
+  recentStatus: string;
+  tags: string[];
+  coverGradient: string;
+  coverAccentClass: string;
+  imageUrl?: string | null;
+  popularityHint: string;
+  href: string;
+  actionLabel: string;
+  sourceLabel?: string;
+  spotlightLabel?: string;
+  featuredAtOrder: number;
+};
 
-const steps = [
-  { title: "写下创意", description: "一句话或一张参考图，先把想法说清楚。" },
-  { title: "看方向判断", description: "不只看图，还看这个方向适不适合继续。" },
-  { title: "选推进方式", description: "进入试做路径、提交推进意向，或补充完整方案。" },
-  { title: "进入项目池", description: "后续可展示、跟进，未来还能继续出道。" }
-];
+function mapRealProjectToLandingCard(project: ProjectRow): LandingCardItem | null {
+  if (project.linked_intent?.source_type !== "crowdfunding") return null;
+  const showcaseControl = project.linked_intent.showcase_control;
+  if (showcaseControl?.paused) return null;
 
-const audiences = [
-  { title: "景区 / 文创团队", description: "想先试一款纪念礼品，看题材有没有商品感。" },
-  { title: "高校 / 社团", description: "想把校园记忆点先变成可以讨论的积木方向。" },
-  { title: "玩家 / 创作者", description: "先验证创意值不值得继续做，再决定要不要深挖。" },
-  { title: "品牌 / 内容团队", description: "把题材先变成积木方案，方便沟通和继续推进。" }
-];
+  const judgement = mapIntentSourceTypeToJudgement(project.linked_intent.source_type);
+  const spotlightLabel = showcaseControl?.homepage
+    ? "首页优先展示"
+    : showcaseControl?.featured
+      ? "精选公开展示"
+      : "最近进入公开展示";
+  const popularityHint = showcaseControl?.homepage
+    ? "优先出现在首页公开展示位"
+    : showcaseControl?.featured
+      ? "来自精选公开展示"
+      : "来自真实项目的公开展示";
+  const featuredAtOrder =
+    new Date(project.linked_intent.updated_at).getTime() +
+    (showcaseControl?.homepage ? 60 : 0) +
+    (showcaseControl?.featured ? 40 : 0);
 
-export default function LandingPage() {
+  return {
+    id: project.id,
+    title: project.title || "未命名项目",
+    category: mapProjectCategoryToShowcaseCategory(project.category),
+    stage: mapProjectWithIntentToUnifiedStage({
+      projectStatus: project.status,
+      intentStatus: project.linked_intent.status,
+      intentSourceType: project.linked_intent.source_type
+    }),
+    judgement,
+    recentStatus: "",
+    tags: [],
+    coverGradient: "from-violet-100 via-fuchsia-50 to-white",
+    coverAccentClass: "text-violet-900",
+    imageUrl: getQuickProjectPreviewImageUrl(project.notes_for_factory),
+    popularityHint,
+    href: `/showcase/${project.id}`,
+    actionLabel: "看看这个方向",
+    sourceLabel: "真实项目",
+    spotlightLabel,
+    featuredAtOrder
+  };
+}
+
+export default async function LandingPage() {
+  let realProjects: ProjectRow[] = [];
+  try {
+    realProjects = await listProjectsForCurrentVisitor();
+  } catch {
+    realProjects = [];
+  }
+
+  const dynamicFeatured = realProjects
+    .map(mapRealProjectToLandingCard)
+    .filter(Boolean) as LandingCardItem[];
+
+  const staticFeatured = getFeaturedShowcaseProjects(6).map((project) => ({
+    id: project.slug,
+    title: project.title,
+    category: project.category,
+    stage: project.stage,
+    judgement: project.judgement,
+    recentStatus: project.recentStatus,
+    tags: project.tags,
+    coverGradient: project.coverGradient,
+    coverAccentClass: project.coverAccentClass,
+    imageUrl: null,
+    popularityHint: project.popularityHint,
+    href: `/showcase/${project.slug}`,
+    actionLabel: "看看这个方向",
+    sourceLabel: undefined,
+    spotlightLabel: undefined,
+    featuredAtOrder: 0
+  }));
+
+  const featuredProjects =
+    dynamicFeatured.length > 0
+      ? [...dynamicFeatured].sort((a, b) => b.featuredAtOrder - a.featuredAtOrder).slice(0, 2)
+      : staticFeatured.slice(0, 2);
+  const heroVisual = featuredProjects[0] || staticFeatured[0];
+
   return (
-    <section className="space-y-6">
-      <section className="rounded-[32px] border-2 border-amber-100 bg-[radial-gradient(circle_at_top_left,_rgba(253,230,138,0.55),_transparent_35%),linear-gradient(180deg,rgba(255,251,235,0.9),rgba(255,255,255,1))] p-6 shadow-[0_16px_40px_-24px_rgba(217,119,6,0.35)] sm:p-8">
-        <div className="max-w-3xl space-y-3 sm:space-y-4">
-          <p className="inline-flex items-center rounded-full border-2 border-amber-200 bg-white px-3 py-1 text-xs font-bold text-amber-800">
-            AI积木创意孵化平台
-          </p>
-          <h1 className="text-2xl font-black tracking-tight text-slate-900 sm:text-5xl">
-            把你的灵感，变成可推进的积木项目
-          </h1>
-          <p className="max-w-2xl text-sm leading-6 text-slate-600 sm:text-base sm:leading-7">
-            先试创意，看到方向；再做试做、提交意向。这里不是只出一张图，而是帮你把创意往下推进。
-          </p>
-          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
-            <Link
-              href="/quick/new"
-              className="relative inline-flex items-center justify-center rounded-2xl bg-amber-400 px-5 py-3 text-sm font-extrabold text-amber-950 shadow-[0_6px_0_0_#d97706] transition-all duration-200 hover:bg-amber-300 active:translate-y-1 active:shadow-[0_2px_0_0_#d97706] sm:w-auto"
-            >
-              先试一个创意
-            </Link>
-            <Link
-              href="/showcase"
-              className="relative inline-flex items-center justify-center rounded-2xl border-2 border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:border-amber-200 hover:bg-amber-50/60 hover:text-amber-800 active:translate-y-1 active:shadow-none sm:w-auto"
-            >
-              看看别人都在做什么
+    <section className="space-y-12">
+      <section className="page-hero rounded-[40px] px-6 py-7 sm:px-10 sm:py-10">
+        <div className="grid gap-8 lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
+          <div className="max-w-3xl">
+            <h1 className="display-title max-w-[7.4em] text-[2.65rem] font-semibold tracking-[-0.075em] text-slate-950 sm:max-w-[5.4em] sm:text-[4.8rem]">
+              先试一个创意，
+              <br />
+              看看值不值得继续做。
+            </h1>
+            <p className="mt-5 max-w-md text-base leading-8 text-slate-500">
+              先点进去试，再决定是先试做，还是先发出来看看。
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <Link href="/quick/new" className="primary-cta px-7 py-3">
+                先试一个创意
+              </Link>
+            </div>
+            <Link href="/showcase" className="mt-5 inline-flex text-sm font-semibold text-slate-500 hover:text-slate-900">
+              先看看别人怎么玩
             </Link>
           </div>
-          <p className="text-xs font-medium text-slate-500">不是只出一张图，而是帮你把创意往下推进。</p>
-        </div>
-
-        <div className="mt-6 grid gap-4 md:mt-8 md:grid-cols-2">
-          <Link
-            href="/quick/new"
-            className="rounded-3xl border-2 border-amber-200 bg-white/90 p-6 transition-all duration-200 hover:-translate-y-1 hover:border-amber-400 hover:shadow-[0_8px_0_0_#f59e0b]"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-lg font-bold text-slate-900">快速试创意</p>
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-800">适合刚有想法</span>
+          <div className="space-y-5 lg:pl-4">
+            <div className="visual-card overflow-hidden rounded-[40px] border-slate-200/80 bg-white">
+              <div className="brick-surface relative overflow-hidden bg-[#f7f5f0]">
+                <ShowcaseVisual
+                  title={heroVisual.title}
+                  category={heroVisual.category}
+                  imageUrl={heroVisual.imageUrl}
+                  className="h-72 w-full sm:h-[29rem]"
+                />
+              </div>
             </div>
-            <p className="mt-3 text-sm leading-6 text-slate-600">一句话试方向，先看图和判断，再决定值不值得继续。</p>
-          </Link>
-          <Link
-            href="/projects/new"
-            className="rounded-3xl border-2 border-slate-200 bg-white p-6 transition-all duration-200 hover:-translate-y-1 hover:border-blue-300 hover:shadow-[0_8px_0_0_#93c5fd]"
-          >
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-lg font-bold text-slate-900">完整方案</p>
-              <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-700">适合认真推进</span>
+            <div className="flex items-center justify-between gap-4 px-1">
+              <div className="min-w-0">
+                <p className="truncate text-lg font-semibold tracking-[-0.04em] text-slate-950 sm:text-xl">{heroVisual.title}</p>
+                <p className="mt-1 text-sm font-medium text-slate-500">{heroVisual.category}</p>
+              </div>
+              <Link href={heroVisual.href} className="inline-flex shrink-0 text-sm font-semibold text-slate-900 hover:text-slate-600">
+                看看这个方向
+              </Link>
             </div>
-            <p className="mt-3 text-sm leading-6 text-slate-600">补齐结构、风险和打样思路，生成更适合继续沟通和推进的一版方案。</p>
-          </Link>
+          </div>
         </div>
       </section>
 
-      <section className="rounded-3xl border-2 border-slate-100 bg-white p-6 shadow-sm sm:p-8">
-        <div className="max-w-xl">
-          <h2 className="text-xl font-bold text-slate-900">你可以这样把创意往下推进</h2>
-          <p className="mt-2 text-sm text-slate-500">先有方向，再看方案，最后进入项目池。整个过程比单纯生图更可继续。</p>
-        </div>
-        <div className="mt-6 grid gap-3 md:grid-cols-4">
-          {steps.map((step, index) => (
-            <div key={step.title} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-              <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-white text-sm font-black text-amber-700 shadow-sm">
-                {index + 1}
-              </span>
-              <p className="mt-3 text-sm font-bold text-slate-900">{step.title}</p>
-              <p className="mt-2 text-xs leading-6 text-slate-500">{step.description}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-3xl border-2 border-slate-100 bg-white p-6 shadow-sm sm:p-8">
-        <div className="flex flex-wrap items-end justify-between gap-3">
+      <section className="page-section rounded-[40px] px-6 py-8 sm:px-8 sm:py-10">
+        <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h2 className="text-xl font-bold text-slate-900">大家都在做</h2>
-            <p className="mt-2 text-sm text-slate-500">先用精选案例把平台气氛立起来，让用户看到别人也在玩、也在推进。</p>
+            <h2 className="display-title text-4xl font-semibold tracking-[-0.06em] text-slate-950">先看看别人怎么玩。</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-8 text-slate-500">挑一个你也想试的方向，点进去就行。</p>
           </div>
-          <Link href="/showcase" className="text-sm font-bold text-amber-700 hover:text-amber-900 hover:underline">
-            查看更多案例
+          <Link href="/showcase" className="text-sm font-semibold text-slate-900 hover:text-slate-600">
+            看更多方向
           </Link>
         </div>
-        <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {featuredProjects.map((project) => (
+        <div className="mt-10 grid gap-6 xl:grid-cols-12">
+          {featuredProjects.map((project, index) => (
             <article
-              key={project.slug}
-              className="overflow-hidden rounded-3xl border-2 border-slate-100 bg-slate-50/60 transition-all duration-200 hover:-translate-y-1 hover:border-amber-200 hover:bg-white hover:shadow-[0_10px_28px_-18px_rgba(217,119,6,0.35)]"
+              key={project.id}
+              className={`visual-card rounded-[32px] border border-slate-200/80 bg-white ${
+                index === 0 ? "xl:col-span-7" : "xl:col-span-5"
+              }`}
             >
-              <div className={`relative h-36 bg-gradient-to-br ${project.coverGradient}`}>
-                <div className="absolute inset-x-5 top-4 flex items-center justify-between gap-3">
-                  <span className="rounded-full bg-white/90 px-3 py-1 text-[11px] font-bold text-slate-700">{project.category}</span>
-                  <span className="rounded-full bg-slate-900/85 px-3 py-1 text-[11px] font-bold text-white">{project.stage}</span>
-                </div>
-                <div className="absolute inset-x-5 bottom-4">
-                  <p className={`text-sm font-black ${project.coverAccentClass}`}>{project.popularityHint}</p>
+              <div className={`brick-surface cover-frame bg-[#f7f5f0] ${index === 0 ? "xl:min-h-[21rem]" : ""}`}>
+                <ShowcaseVisual
+                  title={project.title}
+                  category={project.category}
+                  imageUrl={project.imageUrl}
+                  className={`${index === 0 ? "h-72 xl:h-[25rem]" : "h-64"} w-full`}
+                />
+                <div className="absolute left-4 top-4 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                  <span className="rounded-full border border-white/70 bg-white/90 px-3 py-1 text-[color:var(--brand-accent)] shadow-sm">
+                    {project.category}
+                  </span>
+                  <span className="rounded-full border border-white/25 bg-slate-950/70 px-3 py-1 text-white backdrop-blur">
+                    {project.stage}
+                  </span>
                 </div>
               </div>
-              <div className="space-y-3 p-5">
-                <h3 className="text-base font-bold text-slate-900">{project.title}</h3>
-                <p className="text-sm font-bold text-slate-800">{project.judgement}</p>
-                <p className="text-sm leading-6 text-slate-600">{project.recentStatus}</p>
-                <div className="flex flex-wrap gap-2">
-                  {project.tags.map((tag) => (
-                    <span key={tag} className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
-                      {tag}
-                    </span>
-                  ))}
+              <div className={`space-y-4 px-6 py-6 ${index === 0 ? "xl:px-8 xl:py-7" : ""}`}>
+                <h3
+                  className={`display-title font-semibold tracking-[-0.05em] text-slate-950 ${
+                    index === 0 ? "text-[2.4rem]" : "text-[2rem]"
+                  }`}
+                >
+                  {project.title}
+                </h3>
+                <p className="line-clamp-2 text-sm leading-7 text-slate-500">{project.judgement}</p>
+                <div className="flex items-center justify-between gap-4 pt-1">
+                  <Link href={project.href} className="inline-flex text-sm font-semibold text-slate-900 hover:text-slate-600">
+                    {project.actionLabel}
+                  </Link>
                 </div>
-                <Link href={`/showcase/${project.slug}`} className="inline-flex text-sm font-bold text-amber-700 hover:text-amber-900">
-                  看看这个方向
-                </Link>
               </div>
             </article>
           ))}
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
-        <div className="rounded-3xl border-2 border-slate-100 bg-white p-6 shadow-sm sm:p-8">
-          <h2 className="text-xl font-bold text-slate-900">适合哪些人先上手</h2>
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            {audiences.map((item) => (
-              <div key={item.title} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
-                <p className="text-sm font-bold text-slate-900">{item.title}</p>
-                <p className="mt-2 text-xs leading-6 text-slate-500">{item.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="rounded-3xl border-2 border-emerald-100 bg-emerald-50/70 p-6 shadow-sm sm:p-8">
-          <h2 className="text-xl font-bold text-emerald-950">前期判断说明</h2>
-          <div className="mt-4 space-y-3 text-sm leading-7 text-emerald-900">
-            <p>AI 结果用于创意判断和前期推进，不代表最终打样结果。</p>
-            <p>小批量与试做会结合结构、颗粒和包装做人工确认。</p>
-            <p>可优先采用高品质高砖颗粒做前期方案评估。</p>
-          </div>
-        </div>
+      <section className="page-section rounded-[32px] px-6 py-6 sm:px-8">
+        <p className="text-center text-sm font-semibold text-slate-500 sm:text-base">
+          平台会定期从公开展示里挑出更适合量产的方向。
+        </p>
       </section>
     </section>
   );

@@ -5,7 +5,7 @@ import {
   decideQuickImageMode
 } from "@/lib/quick-generation-pipeline";
 import { generateQuickPreviewImage, isImageGenerationUpstreamError, type GenerateQuickPreviewImageResult } from "@/services/ai-quick-image";
-import { updateQuickProjectImageForDemoUser } from "@/services/project-service";
+import { updateQuickProjectImageForCurrentVisitor } from "@/services/project-service";
 import type { QuickDirection, QuickEntryInput, QuickScalePreference, QuickStyle } from "@/types/quick-entry";
 
 type QuickGenerateImageBody = {
@@ -336,7 +336,7 @@ export async function POST(request: Request) {
     const quickProjectId = quickProjectIdForPersist;
     if (quickProjectId) {
       try {
-        await updateQuickProjectImageForDemoUser({
+        await updateQuickProjectImageForCurrentVisitor({
           projectId: quickProjectId,
           idea: input.idea,
           previewImageUrl,
@@ -377,7 +377,7 @@ export async function POST(request: Request) {
     });
     if (quickProjectIdForPersist && ideaForPersist) {
       try {
-        await updateQuickProjectImageForDemoUser({
+        await updateQuickProjectImageForCurrentVisitor({
           projectId: quickProjectIdForPersist,
           idea: ideaForPersist,
           imageWarning: toFriendlyImageError(error)
@@ -395,4 +395,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

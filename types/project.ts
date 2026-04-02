@@ -26,6 +26,19 @@ export type ProjectRow = {
   status: ProjectStatus;
   updated_at: string;
   notes_for_factory?: string | null;
+  linked_intent?: {
+    id: string;
+    source_type: string;
+    status: string;
+    updated_at: string;
+    latest_quote_status?: string | null;
+    latest_quote_version?: number | null;
+    showcase_control?: {
+      featured: boolean;
+      homepage: boolean;
+      paused: boolean;
+    } | null;
+  } | null;
 };
 
 export type ProjectDetailRow = {
@@ -33,9 +46,52 @@ export type ProjectDetailRow = {
   user_id: string;
   title: string | null;
   category: string | null;
+  notes_for_factory?: string | null;
   style: string | null;
   size_target: string | null;
   audience: string | null;
   status: ProjectStatus;
   updated_at: string;
+  linked_intent?: {
+    id: string;
+    source_type: string;
+    status: string;
+    updated_at: string;
+    latest_quote_status?: string | null;
+    latest_quote_version?: number | null;
+    showcase_control?: {
+      featured: boolean;
+      homepage: boolean;
+      paused: boolean;
+    } | null;
+    recent_followups?: Array<{
+      id: string;
+      action_type: string | null;
+      content: string | null;
+      from_status?: string | null;
+      to_status?: string | null;
+      created_at: string;
+    }>;
+  } | null;
+  all_linked_intents?: Array<{
+    id: string;
+    source_type: string;
+    status: string;
+    updated_at: string;
+    latest_quote_status?: string | null;
+    latest_quote_version?: number | null;
+    showcase_control?: {
+      featured: boolean;
+      homepage: boolean;
+      paused: boolean;
+    } | null;
+    latest_followup?: {
+      id: string;
+      action_type: string | null;
+      content: string | null;
+      from_status?: string | null;
+      to_status?: string | null;
+      created_at: string;
+    } | null;
+  }>;
 };

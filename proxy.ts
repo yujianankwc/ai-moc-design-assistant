@@ -21,12 +21,19 @@ export async function proxy(request: NextRequest) {
   const isLoggedIn = await verifyInviteSessionToken(sessionCookie);
   const isProjectsRoute = pathname.startsWith("/projects");
   const isQuickRoute = pathname.startsWith("/quick");
+  const isPublicQuickPageRoute = pathname === "/quick/new" || pathname === "/quick/result";
   const isIntentsRoute = pathname.startsWith("/intents");
   const isAdminRoute = pathname.startsWith("/admin");
-  const isProtectedPageRoute = isProjectsRoute || isQuickRoute || isIntentsRoute || isAdminRoute;
+  const isProtectedPageRoute =
+    isProjectsRoute || (isQuickRoute && !isPublicQuickPageRoute) || isIntentsRoute || isAdminRoute;
+  const isPublicQuickApiRoute =
+    pathname === "/api/quick/generate" ||
+    pathname === "/api/quick/generate-image" ||
+    pathname === "/api/quick/upload-reference" ||
+    pathname.startsWith("/api/quick/projects/");
   const isProtectedApiRoute =
     pathname.startsWith("/api/projects") ||
-    pathname.startsWith("/api/quick") ||
+    (pathname.startsWith("/api/quick") && !isPublicQuickApiRoute) ||
     pathname.startsWith("/api/service-requests") ||
     pathname.startsWith("/api/intents") ||
     pathname.startsWith("/api/quotes") ||

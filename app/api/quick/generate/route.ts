@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
-  createQuickProjectForDemoUser,
-  updateQuickProjectResultForDemoUser
+  createQuickProjectForCurrentVisitor,
+  updateQuickProjectResultForCurrentVisitor
 } from "@/services/project-service";
 import {
   buildQuickGenerationSummary,
@@ -12,7 +12,7 @@ import {
 } from "@/lib/quick-generation-pipeline";
 import { generateQuickCopyWithAI } from "@/services/ai-quick-copy";
 import { generateQuickPreviewImage } from "@/services/ai-quick-image";
-import { updateQuickProjectImageForDemoUser } from "@/services/project-service";
+import { updateQuickProjectImageForCurrentVisitor } from "@/services/project-service";
 import type { QuickDirection, QuickEntryInput, QuickScalePreference, QuickStyle } from "@/types/quick-entry";
 
 type QuickGenerateBody = {
@@ -106,10 +106,10 @@ function isRetriableError(rawError: string) {
 function toFriendlyImageError(rawError: string) {
   const lowerRaw = rawError.toLowerCase();
   if (lowerRaw.includes("fallback_exhausted")) {
-    return "现在设计积木的人太多了，AI 设计师忙不过来，稍后去项目列表看看，我们一定会帮你设计出来。";
+    return "当前结果还在整理中，建议稍后去项目列表继续查看。";
   }
   if (rawError.includes("used_up") || lowerRaw.includes("balance is not sufficient")) {
-    return "AI 积木设计师今天的设计配额用完了，正在补充中，请稍后再来试试。";
+    return "当前生成配额较紧张，建议稍后再试，或先去项目列表查看已有结果。";
   }
   if (
     rawError.includes("No available channel") ||
@@ -117,7 +117,7 @@ function toFriendlyImageError(rawError: string) {
     lowerRaw.includes("channel busy") ||
     lowerRaw.includes("service unavailable")
   ) {
-    return "大家都在设计自己的积木创意，AI 设计师正忙着赶稿，请稍后去项目列表查看。";
+    return "当前有较多创意正在排队整理，建议稍后去项目列表查看。";
   }
   if (
     lowerRaw.includes("timed out") ||
@@ -125,12 +125,12 @@ function toFriendlyImageError(rawError: string) {
     rawError.includes("AbortError") ||
     lowerRaw.includes("aborted")
   ) {
-    return "这个创意有点复杂，AI 设计师还在琢磨中，稍后去项目列表看看，我们会帮你设计好的。";
+    return "这个创意还在继续整理中，稍后去项目列表查看会更稳妥。";
   }
   if (lowerRaw.includes("invalidparameter") || lowerRaw.includes("parameter `size` specified")) {
     return "设计参数需要调整一下，我们已经记录下来了，请再试一次。";
   }
-  return "AI 积木设计师暂时忙不过来，稍后去项目列表查看，我们一定会帮你设计出来。";
+  return "当前结果正在整理中，建议稍后去项目列表继续查看。";
 }
 
 function sleep(ms: number) {
@@ -139,8 +139,8 @@ function sleep(ms: number) {
 
 async function projectAlreadyHasImage(projectId: string): Promise<boolean> {
   try {
-    const { getQuickProjectByIdForDemoUser } = await import("@/services/project-service");
-    const project = await getQuickProjectByIdForDemoUser(projectId);
+    const { getQuickProjectByIdForCurrentVisitor } = await import("@/services/project-service");
+    const project = await getQuickProjectByIdForCurrentVisitor(projectId);
     return Boolean(project?.previewImageUrl);
   } catch {
     return false;
@@ -207,7 +207,7 @@ async function generateAndPersistQuickImageInBackground(input: {
     if (!previewImageUrl) return;
     if (await projectAlreadyHasImage(input.projectId)) return;
 
-    await updateQuickProjectImageForDemoUser({
+    await updateQuickProjectImageForCurrentVisitor({
       projectId: input.projectId,
       idea: input.quickInput.idea,
       previewImageUrl,
@@ -217,7 +217,7 @@ async function generateAndPersistQuickImageInBackground(input: {
     if (await projectAlreadyHasImage(input.projectId)) return;
 
     const rawError = error instanceof Error ? error.message : String(error || "");
-    await updateQuickProjectImageForDemoUser({
+    await updateQuickProjectImageForCurrentVisitor({
       projectId: input.projectId,
       idea: input.quickInput.idea,
       imageWarning: toFriendlyImageError(rawError)
@@ -273,13 +273,13 @@ export async function POST(request: Request) {
     const quickProjectId = typeof body.quickProjectId === "string" ? body.quickProjectId.trim() : "";
     const regenerateToken = typeof body.regenerateToken === "string" ? body.regenerateToken : "";
     const createdQuickProject = quickProjectId
-      ? await updateQuickProjectResultForDemoUser({
+      ? await updateQuickProjectResultForCurrentVisitor({
           projectId: quickProjectId,
           quickInput: input,
           quickResult: result,
           textWarning
         })
-      : await createQuickProjectForDemoUser({
+      : await createQuickProjectForCurrentVisitor({
           quickInput: input,
           quickResult: result,
           textWarning
@@ -307,4 +307,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
-

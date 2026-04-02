@@ -4,38 +4,27 @@ import {
   mockProjectResultMap
 } from "@/services/mock-project-results";
 import Link from "next/link";
-import ServiceRequestModals from "@/components/service-request-modals";
-import RegenerateProjectButton from "@/components/regenerate-project-button";
-import ManualEditSection from "@/components/manual-edit-section";
-import ResultDiffSummary from "@/components/result-diff-summary";
 import {
   getProjectWithOutputById,
   RULE_DEDUCTION_MARKER,
   SYSTEM_FALLBACK_MARKER
 } from "@/services/project-service";
 import { parseEditableVersion } from "@/lib/editable-version";
-import { buildKeyUpgradeSuggestions } from "@/lib/key-upgrade-suggestions";
-import { buildCreativeProfileOverview } from "@/lib/creative-profile-v1";
-import { pickSimilarReferences } from "@/lib/reference-matcher";
-import { toResultDiffSnapshot } from "@/lib/result-diff";
 import {
-  formatNextSuggestionLabel,
+  formatIntentFollowupSummary,
+  getIntentStatusExplanation,
   getStageExplanation,
-  inferFitForFromJudgement,
   inferJudgementFromProjectSnapshot,
-  inferNextSuggestionFromJudgement,
+  inferIntentNextSuggestion,
+  mapIntentSourceTypeToJudgement,
+  mapIntentSourceTypeToPathLabel,
   mapProjectCategoryToPathLabel,
-  mapProjectStatusToUnifiedStage,
-  PROJECT_STAGE_LABELS
+  mapProjectWithIntentToUnifiedStage
 } from "@/lib/project-language";
+import { buildQuickPathHref } from "@/lib/quick-path-context";
 import {
-  mapAudience,
-  mapBuildDifficulty,
-  mapCategory,
-  mapSizeTarget,
-  mapStyle
+  mapCategory
 } from "@/lib/display-mappers";
-import type { ProjectBriefExportData } from "@/lib/brief-export";
 
 type ProjectResultPageProps = {
   params: Promise<{ id: string }>;
@@ -74,16 +63,6 @@ function extractRuleDeductions(value: string | null | undefined) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 3);
-}
-
-function buildResultJudgementSentence(input: {
-  overallSummary: string;
-  recommendation: string;
-  sizeTarget: string;
-}) {
-  const summary = input.overallSummary.trim();
-  const trimmed = summary.endsWith("。") ? summary.slice(0, -1) : summary;
-  return `${trimmed} 当前更适合按「${input.recommendation}」路径推进（目标体量：${input.sizeTarget}）。`;
 }
 
 function composeResultFromDb(params: {
@@ -134,7 +113,7 @@ function composeResultFromDb(params: {
     sizeTarget: params.project.size_target || "未填写",
     audience: params.project.audience || "未填写",
     buildDifficulty: params.output.build_difficulty || "中等",
-    scenarioTag: params.output.recommended_next_step || "已生成占位结果",
+    scenarioTag: params.output.recommended_next_step || "已生成当前方向建议",
     production_score: params.output.production_score,
     designBrief: designBrief.length > 0 ? designBrief : ["暂无设计简报内容"],
     bomDraft:
@@ -163,11 +142,70 @@ function getMainRecommendation(productionScore: number) {
   return "先把这个方向补充完整";
 }
 
-function getRecommendationReasonText(recommendation: string) {
-  if (recommendation === "去看试做路径") {
-    return "当前更需要先验证结构与装配可行性，再决定是否继续补充完整方案。";
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString("zh-CN");
+}
+
+function formatProjectCommercialSignal(input: {
+  currentIntentStatus?: string | null;
+  latestQuoteStatus?: string | null;
+  latestQuoteVersion?: number | null;
+  stage: string;
+}) {
+  let signal = "当前更适合继续看清方向，再决定要不要投入更多资源。";
+  const isDeliveryPhase =
+    input.currentIntentStatus === "locked" ||
+    input.currentIntentStatus === "preparing_delivery" ||
+    input.currentIntentStatus === "delivering" ||
+    input.currentIntentStatus === "delivered" ||
+    input.currentIntentStatus === "closed_won";
+
+  if (input.stage === "公开展示中") {
+    signal = "当前以公开展示和收集关注为主。";
   }
-  return "当前信息仍偏前期，先把方向、结构和关键约束补完整，再继续推进会更稳。";
+
+  if (input.currentIntentStatus === "locked") {
+    signal = "已经进入锁单推进，正在继续确认交付安排。";
+  } else if (input.currentIntentStatus === "preparing_delivery") {
+    signal = "已经开始准备交付安排。";
+  } else if (input.currentIntentStatus === "delivering") {
+    signal = "正在继续跟进交付进度。";
+  } else if (input.currentIntentStatus === "delivered" || input.currentIntentStatus === "closed_won") {
+    signal = "这条方向已经完成交付。";
+  }
+
+  if (!isDeliveryPhase && input.latestQuoteStatus === "draft") {
+    signal = "正在整理最新报价说明。";
+  } else if (!isDeliveryPhase && input.latestQuoteStatus === "sent") {
+    signal = "已经给出一版报价说明。";
+  } else if (!isDeliveryPhase && input.latestQuoteStatus === "accepted") {
+    signal = "这版报价说明已经确认。";
+  } else if (!isDeliveryPhase && input.latestQuoteStatus === "replaced") {
+    signal = "这条方向已经更新过报价说明。";
+  }
+
+  if (input.latestQuoteVersion) {
+    return `${signal} 最新报价 v${input.latestQuoteVersion}`;
+  }
+
+  return signal;
+}
+
+function scoreIntentProgress(input: { sourceType: string; status: string; updatedAt: string }) {
+  let score = 0;
+  if (input.sourceType === "crowdfunding") score += 5;
+  if (input.status === "delivered" || input.status === "closed_won") score += 52;
+  else if (input.status === "delivering") score += 48;
+  else if (input.status === "preparing_delivery") score += 44;
+  else if (input.status === "locked") score += 40;
+  else if (input.status === "deposit_pending") score += 30;
+  else if (input.status === "quoted") score += 25;
+  else if (input.status === "confirming" || input.status === "contacted") score += 18;
+  else score += 10;
+  return score + new Date(input.updatedAt).getTime() / 1_000_000_000_000;
 }
 
 export default async function ProjectResultPage({ params }: ProjectResultPageProps) {
@@ -178,7 +216,38 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
   let usedAiFallbackOutput = false;
   let projectStatusRaw: string | null = null;
   let realProjectId: string | null = null;
-  let updatedAtText = "演示数据";
+  let allLinkedIntents: Array<{
+    id: string;
+    source_type: string;
+    status: string;
+    updated_at: string;
+    latest_quote_status?: string | null;
+    latest_quote_version?: number | null;
+    latest_followup?: {
+      id: string;
+      action_type: string | null;
+      content: string | null;
+      from_status?: string | null;
+      to_status?: string | null;
+      created_at: string;
+    } | null;
+  }> = [];
+  let linkedIntent: {
+    id: string;
+    source_type: string;
+    status: string;
+    updated_at: string;
+    latest_quote_status?: string | null;
+    latest_quote_version?: number | null;
+    recent_followups?: Array<{
+      id: string;
+      action_type: string | null;
+      content: string | null;
+      from_status?: string | null;
+      to_status?: string | null;
+      created_at: string;
+    }>;
+  } | null = null;
 
   if (isUuid(id)) {
     try {
@@ -186,7 +255,8 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
 
       if (dbDetail?.project && dbDetail.output) {
         projectStatusRaw = dbDetail.project.status;
-        updatedAtText = new Date(dbDetail.project.updated_at).toLocaleString("zh-CN");
+        linkedIntent = dbDetail.project.linked_intent ?? null;
+        allLinkedIntents = dbDetail.project.all_linked_intents ?? [];
         usedAiFallbackOutput = Boolean(
           dbDetail.output.internal_recommendation?.includes(SYSTEM_FALLBACK_MARKER)
         );
@@ -199,7 +269,8 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
         realProjectId = id;
       } else if (dbDetail?.project && !dbDetail.output) {
         projectStatusRaw = dbDetail.project.status;
-        updatedAtText = new Date(dbDetail.project.updated_at).toLocaleString("zh-CN");
+        linkedIntent = dbDetail.project.linked_intent ?? null;
+        allLinkedIntents = dbDetail.project.all_linked_intents ?? [];
         const fallback = mockProjectResultMap[DEFAULT_MOCK_PROJECT_ID];
         if (fallback) {
           result = {
@@ -228,8 +299,12 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
   if (!result) return null;
 
   const mainRecommendation = getMainRecommendation(result.production_score);
-  const unifiedStage = mapProjectStatusToUnifiedStage(projectStatusRaw);
-  const pathLabel = mapProjectCategoryToPathLabel(result.category);
+  const unifiedStage = mapProjectWithIntentToUnifiedStage({
+    projectStatus: projectStatusRaw,
+    intentStatus: linkedIntent?.status,
+    intentSourceType: linkedIntent?.source_type
+  });
+  const pathLabel = linkedIntent ? mapIntentSourceTypeToPathLabel(linkedIntent.source_type) : mapProjectCategoryToPathLabel(result.category);
   const projectJudgement = inferJudgementFromProjectSnapshot({
     category: result.category,
     style: result.style,
@@ -237,376 +312,211 @@ export default async function ProjectResultPage({ params }: ProjectResultPagePro
     designBrief: result.designBrief,
     recommendation: mainRecommendation
   });
-  const fitForText = inferFitForFromJudgement(projectJudgement);
-  const nextSuggestion = formatNextSuggestionLabel(inferNextSuggestionFromJudgement(projectJudgement));
-  const stageExplanation = getStageExplanation(unifiedStage, pathLabel);
-  const exportData: ProjectBriefExportData = {
-    projectName: result.projectTitle,
-    projectId: result.id,
-    statusLabel: unifiedStage,
-    categoryLabel: mapCategory(result.category),
-    styleLabel: mapStyle(result.style),
-    sizeTargetLabel: mapSizeTarget(result.sizeTarget),
-    audienceLabel: mapAudience(result.audience),
-    designBrief: result.designBrief,
-    bomDraft: result.bomDraft,
-    risks: result.risks,
-    productionScore: result.production_score,
-    buildDifficultyLabel: mapBuildDifficulty(result.buildDifficulty),
-    recommendation: mainRecommendation,
-    manufacturabilityTips: result.manufacturabilityTips,
-    collaborationAdvice: result.collaborationAdvice,
-    manualEditContent: result.manualEditDraft,
-    updatedAtText,
-    isFallbackResult: usedAiFallbackOutput || usedFallbackOutput
-  };
-  const currentDiffSnapshot = toResultDiffSnapshot({
-    productionScore: result.production_score,
-    recommendedNextStep: result.scenarioTag,
-    recommendedService: mainRecommendation,
-    bomGroups: result.bomDraft.map((item) => ({
-      item: item.item,
-      estimate: item.estimate
-    })),
-    riskCount: result.risks.length
-  });
-  const keyUpgradeSuggestions = buildKeyUpgradeSuggestions({
-    productionScore: result.production_score,
-    keyDeductions: result.scoreDeductions ?? [],
-    bomGroups: result.bomDraft,
-    riskNotes: result.risks,
-    recommendedNextStep: result.scenarioTag,
-    generationMode: undefined
-  });
-  const actionSuggestions = keyUpgradeSuggestions.slice(0, 2);
-  const creativeProfile = buildCreativeProfileOverview({
-    category: result.category,
-    style: result.style,
-    sizeTarget: result.sizeTarget,
-    audience: result.audience,
-    designBrief: result.designBrief,
-    bomDraft: result.bomDraft,
-    risks: result.risks,
-    keyDeductions: result.scoreDeductions ?? [],
-    productionScore: result.production_score,
-    recommendation: mainRecommendation
-  });
-  const similarReferences = pickSimilarReferences({
-    category: result.category,
-    style: result.style,
-    sizeTarget: result.sizeTarget,
-    audience: result.audience,
-    designBrief: result.designBrief,
-    bomDraft: result.bomDraft,
-    risks: result.risks,
-    recommendedNextStep: result.scenarioTag,
-    generationMode: undefined
+  const nextSuggestion = linkedIntent
+    ? inferIntentNextSuggestion({ sourceType: linkedIntent.source_type, status: linkedIntent.status })
+    : formatNextSuggestionLabel(inferNextSuggestionFromJudgement(projectJudgement));
+  const stageExplanation = linkedIntent
+    ? getIntentStatusExplanation({ status: linkedIntent.status, sourceType: linkedIntent.source_type })
+    : getStageExplanation(unifiedStage, pathLabel);
+  const linkedIntentJudgement = linkedIntent ? mapIntentSourceTypeToJudgement(linkedIntent.source_type) : null;
+  const projectCommercialSignal = formatProjectCommercialSignal({
+    currentIntentStatus: linkedIntent?.status,
+    latestQuoteStatus: linkedIntent?.latest_quote_status,
+    latestQuoteVersion: linkedIntent?.latest_quote_version,
+    stage: unifiedStage
   });
   const designBriefSummary = result.designBrief[0] ?? "暂无设计简报总述。";
-  const designBriefHighlights = result.designBrief.slice(1, 4);
-  const resultJudgement = buildResultJudgementSentence({
-    overallSummary: creativeProfile.overallSummary,
-    recommendation: mainRecommendation,
-    sizeTarget: mapSizeTarget(result.sizeTarget)
-  });
-  const recommendationReasonText = getRecommendationReasonText(mainRecommendation);
+  const projectTimeline = [...allLinkedIntents]
+    .map((item) => ({
+      id: item.latest_followup?.id || item.id,
+      createdAt: item.latest_followup?.created_at || item.updated_at,
+      summary: formatIntentFollowupSummary({
+        actionType: item.latest_followup?.action_type,
+        content: item.latest_followup?.content,
+        fromStatus: item.latest_followup?.from_status,
+        toStatus: item.latest_followup?.to_status
+      }),
+      pathLabel: mapIntentSourceTypeToPathLabel(item.source_type)
+    }))
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 5);
+  const recommendedPath = [...allLinkedIntents]
+    .sort(
+      (a, b) =>
+        scoreIntentProgress({ sourceType: b.source_type, status: b.status, updatedAt: b.updated_at }) -
+        scoreIntentProgress({ sourceType: a.source_type, status: a.status, updatedAt: a.updated_at })
+    )[0] || null;
+  const projectQuickContext = {
+    projectId: realProjectId || "",
+    idea: result.projectTitle,
+    direction: "",
+    style: "",
+    scale: "",
+    referenceImage: "",
+    quickJudgement: linkedIntentJudgement || projectJudgement,
+    quickPath: ""
+  } as const;
+  const primaryAction =
+    linkedIntent?.source_type === "crowdfunding"
+      ? { href: `/intents/${linkedIntent.id}`, label: "继续发布出来看看" }
+      : nextSuggestion.includes("试做")
+        ? { href: buildQuickPathHref("small_batch", projectQuickContext), label: "先下单试做" }
+        : { href: buildQuickPathHref("professional_upgrade", projectQuickContext), label: "先把这个方向补完整" };
 
   return (
     <section className="space-y-4 sm:space-y-5">
       <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex rounded-full border-2 border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
-            当前状态 · {unifiedStage}
+            现在到哪一步了 · {unifiedStage}
           </span>
           <span className="inline-flex rounded-full border-2 border-slate-200 bg-slate-50 px-3 py-1 text-xs font-bold text-slate-700">
-            当前路径 · {pathLabel}
+            现在主要这样玩 · {pathLabel}
           </span>
         </div>
         <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">{result.projectTitle}</h1>
         <p className="text-sm text-slate-600">{stageExplanation}</p>
-        <div className="grid gap-3 md:grid-cols-3">
+        <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded-xl bg-slate-50 px-4 py-3">
-            <p className="text-xs font-bold text-slate-400">当前判断</p>
-            <p className="mt-1 text-sm font-bold text-slate-900">{projectJudgement}</p>
+            <p className="text-xs font-bold text-slate-400">这是什么方向</p>
+            <p className="mt-1 text-sm font-bold text-slate-900">{linkedIntentJudgement || projectJudgement}</p>
           </div>
           <div className="rounded-xl bg-slate-50 px-4 py-3">
-            <p className="text-xs font-bold text-slate-400">当前更适合</p>
-            <p className="mt-1 text-sm font-bold text-slate-900">{fitForText}</p>
-          </div>
-          <div className="rounded-xl bg-slate-50 px-4 py-3">
-            <p className="text-xs font-bold text-slate-400">当前建议</p>
+            <p className="text-xs font-bold text-slate-400">下一步最适合</p>
             <p className="mt-1 text-sm font-bold text-amber-700">{nextSuggestion}</p>
           </div>
         </div>
-        <div className="grid gap-2 sm:grid-cols-4">
-          {PROJECT_STAGE_LABELS.map((step) => {
-            const active = PROJECT_STAGE_LABELS.indexOf(step) <= PROJECT_STAGE_LABELS.indexOf(unifiedStage);
-            return (
-              <p
-                key={step}
-                className={
-                  active
-                    ? "rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-900"
-                    : "rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500"
-                }
-              >
-                {step}
-              </p>
-            );
-          })}
+        <div className="flex flex-wrap items-center gap-3 pt-1">
+          <Link href={primaryAction.href} className="primary-cta px-4 py-2.5">
+            {primaryAction.label}
+          </Link>
+          <Link href="/projects" className="secondary-cta px-4 py-2.5">
+            回到我的
+          </Link>
         </div>
       </div>
       {!fromRealProject && !mockProjectResultMap[id] && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          当前项目还没有真实方案内容，这里先给你一版演示方案，方便继续判断怎么推进。
+          当前项目结果还在整理中，这里先给你一版可继续判断方向的参考结果。
         </div>
       )}
       {fromRealProject && usedFallbackOutput && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          当前项目已读取真实基础信息，这里先用占位方案帮助你继续判断路径。
+          当前项目已读取到基础信息，这里先展示一版参考结果，方便继续判断推进路径。
         </div>
       )}
       {fromRealProject && usedAiFallbackOutput && (
         <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          AI 这次没有顺利补完方案，这里先展示一版自动回退内容，方便你继续看方向判断。
+          AI 这次没有完整补出方案，这里先保留一版可继续判断的结果，你也可以稍后重新整理。
         </div>
       )}
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">项目概览</h2>
-        {realProjectId && (
-          <div className="mt-3">
-            <RegenerateProjectButton
-              projectId={realProjectId}
-              currentSnapshot={currentDiffSnapshot}
-            />
+        <h2 className="text-base font-semibold text-slate-900">这条方向现在是什么情况</h2>
+        <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <div className="rounded-xl bg-slate-50 px-4 py-3">
+            <p className="text-xs font-bold text-slate-400">现在到哪一步</p>
+            <p className="mt-1 text-sm font-bold text-slate-900">{unifiedStage}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 px-4 py-3">
+            <p className="text-xs font-bold text-slate-400">现在主要这样玩</p>
+            <p className="mt-1 text-sm font-bold text-slate-900">{pathLabel}</p>
+          </div>
+          <div className="rounded-xl bg-slate-50 px-4 py-3">
+            <p className="text-xs font-bold text-slate-400">更像什么方向</p>
+            <p className="mt-1 text-sm font-bold text-slate-900">{mapCategory(result.category)}</p>
+          </div>
+        </div>
+        <p className="mt-4 text-sm text-slate-700">{projectCommercialSignal}</p>
+        {allLinkedIntents.length > 1 && (
+          <div className="mt-4 rounded-xl bg-blue-50/70 p-4">
+            <p className="text-xs font-bold text-blue-500">多条路径时先看什么</p>
+            <p className="mt-2 text-sm text-blue-900">
+              当前先围绕 {recommendedPath ? mapIntentSourceTypeToPathLabel(recommendedPath.source_type) : pathLabel} 继续收敛，再决定其它路径是否继续保留。
+            </p>
           </div>
         )}
-        <div className="mt-2 grid gap-2 text-sm text-slate-700 md:grid-cols-2">
-          <p className="break-all">项目 ID：{result.id}</p>
-          <p>项目名称：{result.projectTitle}</p>
-          <p>当前状态：{unifiedStage}</p>
-          <p>作品类型：{mapCategory(result.category)}</p>
-          <p>风格方向：{mapStyle(result.style)}</p>
-          <p>目标体量：{mapSizeTarget(result.sizeTarget)}</p>
-          <p>目标受众：{mapAudience(result.audience)}</p>
-        </div>
-      </section>
-
-      {realProjectId && (
-        <ResultDiffSummary projectId={realProjectId} currentSnapshot={currentDiffSnapshot} />
-      )}
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">当前判断</h2>
-        <p className="mt-2 text-sm text-slate-700">{resultJudgement}</p>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">判断补充</h2>
+        <h2 className="text-base font-semibold text-slate-900">下一步点哪个按钮</h2>
         <p className="mt-2 text-sm text-slate-700">{designBriefSummary}</p>
-        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-700">
-          {designBriefHighlights.length > 0 ? (
-            designBriefHighlights.map((item) => <li key={item}>{item}</li>)
-          ) : (
-            <li>暂无更多关键亮点。</li>
-          )}
-        </ul>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <Link href={primaryAction.href} className="primary-cta px-4 py-2.5">
+            {primaryAction.label}
+          </Link>
+          {!linkedIntent || linkedIntent.source_type !== "crowdfunding" ? (
+            <Link href={buildQuickPathHref("creator_plan", projectQuickContext)} className="secondary-cta px-4 py-2.5">
+              发布出来看看
+            </Link>
+          ) : null}
+          <Link href="/showcase" className="secondary-cta px-4 py-2.5">
+            看别人怎么玩
+          </Link>
+        </div>
       </section>
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">当前更适合</h2>
-        <p className="mt-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
-          {fitForText}
-        </p>
-        <p className="mt-2 text-xs text-slate-500">
-          用来补充这条方向当前更适合怎么走，避免把它看成静态档案。
-        </p>
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
-          {creativeProfile.items.map((item) => (
-            <div key={item.key} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-slate-900">{item.title}</p>
-                <span className="rounded-full bg-white px-2 py-1 text-xs text-slate-600">
-                  {item.levelLabel}
-                </span>
+      {linkedIntent?.recent_followups && linkedIntent.recent_followups.length > 0 ? (
+        <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+          <h2 className="text-base font-semibold text-slate-900">最近发生了什么</h2>
+          <div className="mt-3 space-y-3">
+            {linkedIntent.recent_followups.map((item) => (
+              <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-slate-900">
+                    {formatIntentFollowupSummary({
+                      actionType: item.action_type,
+                      content: item.content,
+                      fromStatus: item.from_status,
+                      toStatus: item.to_status
+                    })}
+                  </p>
+                  <span className="text-xs text-slate-500">{formatDateTime(item.created_at)}</span>
+                </div>
               </div>
-              <p className="mt-2 text-sm text-slate-700">{item.summary}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">相似方向参考</h2>
-        <p className="mt-2 text-xs text-slate-500">
-          以下参考用于启发同类方向与落地思路，不代表唯一标准答案。
-        </p>
-        <div className="mt-3 space-y-3">
-          {similarReferences.map((reference) => (
-            <div key={reference.id} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm font-semibold text-slate-900">{reference.title}</p>
-                <span className="rounded-full bg-white px-2 py-1 text-xs text-slate-600">
-                  {reference.referenceType === "moc"
-                    ? "MOC（创意启发）"
-                    : reference.referenceType === "official_set"
-                      ? "官方套装（成熟逻辑）"
-                      : "高砖方向（落地参考）"}
-                </span>
-              </div>
-              <p className="mt-2 text-sm text-slate-700">为什么相关：{reference.whyRelevant}</p>
-              <p className="mt-1 text-sm text-slate-700">可借鉴点：{reference.takeaway}</p>
-              <p className="mt-1 text-xs text-slate-500">来源：{reference.sourceLabel}</p>
-              {reference.link && (
-                <a
-                  href={reference.link}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 inline-block text-xs font-medium text-blue-700 hover:underline"
-                >
-                  查看参考
-                </a>
-              )}
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">结构与零件草案</h2>
-        <p className="mt-2 text-sm text-slate-600">
-          用于前期判断与打样前规划，不作为最终生产清单。
-        </p>
-        <div className="mt-3 space-y-3">
-          {result.bomDraft.map((item) => (
-            <div key={item.item} className="rounded-md border border-slate-200 bg-slate-50 p-3 text-sm">
-              <p className="font-medium text-slate-900">{item.item}</p>
-              <p className="mt-1 text-slate-700">预估数量：{item.estimate}</p>
-              <p className="mt-1 text-slate-600">{item.note}</p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">当前状态说明</h2>
-        <p className="mt-2 text-sm text-slate-700">{stageExplanation}</p>
-        <p className="mt-2 text-xs text-slate-500">当前建议：{nextSuggestion}</p>
-        <h3 className="mt-4 text-sm font-semibold text-slate-900">现在最该注意</h3>
-        <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-slate-700">
-          {result.risks.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">试做路径参考</h2>
-        <div className="mt-2 rounded-md border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-          可生产性评分：{result.production_score} / 100
-          <br />
-          搭建复杂度：{mapBuildDifficulty(result.buildDifficulty)}
-          <br />
-          当前建议：{nextSuggestion}
-          <p className="mt-2 text-xs text-blue-800">
-            该评分仅用于前期判断，不等同于真实打样或量产结论。
-          </p>
-        </div>
-        {result.scoreDeductions && result.scoreDeductions.length > 0 && (
-          <div className="mt-3 rounded-md border border-amber-200 bg-amber-50 p-3">
-            <p className="text-sm font-medium text-amber-900">关键扣分原因（规则评分）</p>
-            <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-amber-900">
-              {result.scoreDeductions.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
+            ))}
           </div>
-        )}
-        <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-slate-700">
-          {result.manufacturabilityTips.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">当前建议</h2>
-        <p className="mt-2 text-xs text-slate-500">
-          以下建议基于当前文字输入与零件草案，用于前期收敛方向，不等同于真实打样结论。
-        </p>
-        <div className="mt-3 space-y-3">
-          {actionSuggestions.map((suggestion, index) => (
-            <div key={suggestion.title} className="rounded-md border border-slate-200 bg-slate-50 p-3">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-semibold text-slate-900">
-                  {index === 0 ? "先做" : "再看"}：{suggestion.title}
-                </p>
-                <span className="rounded-full bg-white px-2 py-1 text-xs text-slate-600">
-                  {suggestion.priority}
-                </span>
+        </section>
+      ) : projectTimeline.length > 1 ? (
+        <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+          <h2 className="text-base font-semibold text-slate-900">最近发生了什么</h2>
+          <div className="mt-3 space-y-3">
+            {projectTimeline.map((item) => (
+              <div key={item.id} className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-slate-900">{item.summary}</p>
+                  <span className="text-xs text-slate-500">{formatDateTime(item.createdAt)}</span>
+                </div>
               </div>
-              <p className="mt-2 text-sm text-slate-700">动作：{suggestion.action}</p>
-              <p className="mt-1 text-xs text-slate-600">
-                这样通常有助于：{suggestion.impact}
-              </p>
-            </div>
-          ))}
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">继续补充这个方向</h2>
-        <div className="mt-3">
-          {realProjectId ? (
-            <ManualEditSection projectId={realProjectId} initialContent={result.manualEditDraft} />
-          ) : (
-            <>
-              <textarea
-                rows={5}
-                defaultValue={result.manualEditDraft}
-                placeholder="可先写：本轮先保留的核心设定、准备先改的两点、下一轮希望验证的风险。"
-                className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
-              />
-              <p className="mt-2 text-xs text-slate-500">演示项目不支持保存人工编辑内容。</p>
-            </>
-          )}
-        </div>
-      </section>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-base font-semibold text-slate-900">当前更适合怎么推进</h2>
-        <p className="mt-2 text-sm text-slate-700">当前建议：{nextSuggestion}</p>
-        <p className="mt-1 text-sm text-slate-600">为什么是这一步：{recommendationReasonText}</p>
-        <ul className="mt-2 list-disc space-y-2 pl-5 text-sm text-slate-700">
-          {result.collaborationAdvice.map((item) => (
-            <li key={item}>{item}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-5">
-        <h2 className="text-base font-semibold text-slate-900">推进路径选择</h2>
-        <div className="mt-3">
-          <ServiceRequestModals
-            mainRecommendation={mainRecommendation}
-            projectId={id}
-            exportData={exportData}
-          />
-        </div>
+        <h2 className="text-base font-semibold text-slate-900">如果你还想继续玩</h2>
+        <p className="mt-2 text-sm text-slate-600">当前最推荐：{nextSuggestion}。如果你还想试别的，再点下面这些按钮。</p>
         <div className="mt-4 flex flex-wrap gap-3">
           <Link
-            href="/quick/path/small-batch"
-            className="inline-flex rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            href={buildQuickPathHref("small_batch", projectQuickContext)}
+            className="secondary-cta px-4 py-2.5"
           >
-            去看试做路径
+            先下单试做
           </Link>
           <Link
-            href="/showcase"
-            className="inline-flex rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+            href={buildQuickPathHref("professional_upgrade", projectQuickContext)}
+            className="secondary-cta px-4 py-2.5"
           >
-            看相似灵感
+            先把这个方向补完整
           </Link>
+          {realProjectId && (!linkedIntent || linkedIntent.source_type !== "crowdfunding") && (
+            <Link
+              href={buildQuickPathHref("creator_plan", projectQuickContext)}
+              className="secondary-cta px-4 py-2.5"
+            >
+              发布出来看看
+            </Link>
+          )}
         </div>
       </section>
     </section>

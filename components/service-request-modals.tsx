@@ -604,7 +604,10 @@ export default function ServiceRequestModals({
               )}
               {submitSuccess && (
                 <div className="rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
-                  {submitSuccess}
+                  <p>{submitSuccess}</p>
+                  <a href="/service-requests" className="mt-2 inline-flex text-sm font-medium text-emerald-800 underline underline-offset-2">
+                    去看我的服务申请
+                  </a>
                 </div>
               )}
             </div>

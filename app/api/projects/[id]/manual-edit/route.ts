@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { updateManualEditForDemoUser } from "@/services/project-service";
+import { updateManualEditForCurrentVisitor } from "@/services/project-service";
 
 type Params = {
   params: Promise<{ id: string }>;
@@ -21,7 +21,7 @@ export async function POST(request: Request, context: Params) {
     const body = (await request.json()) as { manualEditContent?: string };
     const content = typeof body?.manualEditContent === "string" ? body.manualEditContent : "";
 
-    await updateManualEditForDemoUser({
+    await updateManualEditForCurrentVisitor({
       projectId: id,
       manualEditContent: content
     });

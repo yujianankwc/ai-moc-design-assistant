@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
-  getQuickProjectByIdForDemoUser,
-  updateQuickProjectImageForDemoUser
+  getQuickProjectByIdForCurrentVisitor,
+  updateQuickProjectImageForCurrentVisitor
 } from "@/services/project-service";
 
 type UpdateImageBody = {
@@ -13,7 +13,7 @@ type UpdateImageBody = {
 export async function GET(_: Request, context: { params: Promise<{ id: string }> }) {
   try {
     const { id } = await context.params;
-    const quickProject = await getQuickProjectByIdForDemoUser(id);
+    const quickProject = await getQuickProjectByIdForCurrentVisitor(id);
     if (!quickProject) {
       return NextResponse.json({ error: "未找到轻量项目。" }, { status: 404 });
     }
@@ -30,7 +30,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ id: s
     const body = (await request.json()) as UpdateImageBody;
     const idea = typeof body.idea === "string" ? body.idea.trim() : undefined;
 
-    await updateQuickProjectImageForDemoUser({
+    await updateQuickProjectImageForCurrentVisitor({
       projectId: id,
       idea,
       previewImageUrl: typeof body.previewImageUrl === "string" ? body.previewImageUrl : null,

@@ -8,6 +8,9 @@ export type IntentStatus =
   | "quoted"
   | "deposit_pending"
   | "locked"
+  | "preparing_delivery"
+  | "delivering"
+  | "delivered"
   | "closed_won"
   | "closed_lost";
 
@@ -62,4 +65,3 @@ export type CreateQuoteInput = {
   extra?: Record<string, unknown>;
   confirmedBy?: string;
 };
-

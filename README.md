@@ -18,6 +18,9 @@ npm run dev
    - `supabase/migrations/0003_mvp_service_requests.sql`
    - `supabase/migrations/0004_projects_status_closure.sql`
    - `supabase/migrations/0007_intent_quote_mvp.sql`
+   - `supabase/migrations/0009_showcase_interactions.sql`
+   - `supabase/migrations/0010_service_requests_status_flow.sql`
+   - `supabase/migrations/0011_intent_orders_delivery_status_flow.sql`
 3. Copy `.env.example` to `.env.local` and fill:
    - `SUPABASE_URL`
    - `SUPABASE_SERVICE_ROLE_KEY`
@@ -43,7 +46,7 @@ npm run dev
 
 ## Intent / Quote admin console (MVP)
 
-1. Ensure migration `0007_intent_quote_mvp.sql` is applied.
+1. Ensure migrations `0007_intent_quote_mvp.sql` and `0011_intent_orders_delivery_status_flow.sql` are applied.
 2. If you set `ADMIN_API_TOKEN` in `.env.local`, keep it handy.
 3. Open `/admin/intents` locally.
 4. Paste token in page input and click `保存 Token`.

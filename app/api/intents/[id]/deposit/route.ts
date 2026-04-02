@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { submitDepositForDemoUser } from "@/services/project-service";
+import { submitDepositForCurrentVisitor } from "@/services/project-service";
 
 type Body = {
   amount?: number;
@@ -12,7 +12,7 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
   try {
     const { id } = await context.params;
     const body = (await request.json()) as Body;
-    const ret = await submitDepositForDemoUser({
+    const ret = await submitDepositForCurrentVisitor({
       intentId: id,
       amount: Number(body?.amount || 0),
       paymentChannel: body?.paymentChannel,

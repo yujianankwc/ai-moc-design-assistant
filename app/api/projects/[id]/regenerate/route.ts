@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { regenerateProjectOutputByModeForDemoUser } from "@/services/project-service";
+import { regenerateProjectOutputByModeForCurrentVisitor } from "@/services/project-service";
 import { isGenerationMode } from "@/types/generation-mode";
 
 type Params = {
@@ -23,7 +23,7 @@ export async function POST(request: Request, context: Params) {
     const body = (await request.json().catch(() => null)) as { mode?: unknown } | null;
     const mode = isGenerationMode(body?.mode) ? body?.mode : undefined;
 
-    const result = await regenerateProjectOutputByModeForDemoUser({
+    const result = await regenerateProjectOutputByModeForCurrentVisitor({
       projectId: id,
       mode
     });

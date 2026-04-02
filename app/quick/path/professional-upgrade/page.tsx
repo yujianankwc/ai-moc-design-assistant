@@ -45,6 +45,7 @@ export default function QuickProfessionalUpgradePage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          projectId: context.projectId?.trim() || undefined,
           sourceType: "pro_upgrade",
           contactPhoneOrWechat: contact.trim(),
           contactPreference: contactHint.trim(),
@@ -80,10 +81,10 @@ export default function QuickProfessionalUpgradePage() {
       <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
         <QuickSuccessCard
           mode="compact"
-          title="这条完整方案路径已经记下了"
-          summary="后续你可以继续查看当前阶段和下一步建议。"
+          title="这条方向已经记下，准备继续完善"
+          summary="后续你可以继续补充细节，再决定要不要走试做或发布。"
           stageLabel="已提交意向"
-          nextSuggestion="继续补充完整方案"
+          nextSuggestion="继续完善这个方向"
           footerHint="这一步是先把完整方案路径记下来，方便继续沟通和判断。"
           items={[
             { label: "服务等级", value: serviceTier === "basic" ? "基础版" : serviceTier === "advance" ? "推进版" : "深度协作版" },
@@ -97,13 +98,13 @@ export default function QuickProfessionalUpgradePage() {
                 onClick={goProjectNew}
                 className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
               >
-                继续补充完整方案
+                继续完善这个方向
               </button>
               <Link
-                href={submittedIntentId ? `/intents/${submittedIntentId}` : "/intents"}
+                href={submittedIntentId ? `/intents/${submittedIntentId}` : "/projects"}
                 className="rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
               >
-                继续看当前阶段
+                去我的看看
               </Link>
             </>
           }
@@ -115,12 +116,12 @@ export default function QuickProfessionalUpgradePage() {
   return (
     <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h1 className="text-lg font-semibold text-slate-900">完整方案路径（备选）</h1>
-        <p className="mt-2 text-sm text-slate-700">适合方向已经比较明确、希望把这个创意补充得更完整的人。</p>
+        <h1 className="text-lg font-semibold text-slate-900">第 2 步 · 继续完善这个方向</h1>
+        <p className="mt-2 text-sm text-slate-700">适合方向已经比较明确，想先把结构、预算和目标补充清楚的人。</p>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">关键信息</h2>
+        <h2 className="text-base font-semibold text-slate-900">你想完善到什么程度？</h2>
         <div className="mt-3 grid gap-2 sm:grid-cols-3">
           {[
             { id: "basic", label: "基础版" },
@@ -176,13 +177,13 @@ export default function QuickProfessionalUpgradePage() {
             disabled={isSubmittingIntent}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
           >
-            {isSubmittingIntent ? "正在记下这一步..." : "记下完整方案路径"}
+            {isSubmittingIntent ? "正在记下这一步..." : "继续完善这个方向"}
           </button>
           <Link
             href={buildQuickPathHref("small_batch", context)}
             className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
           >
-            改走试做路径
+            还是先下单试做
           </Link>
         </div>
         {feedback && <p className="mt-2 text-xs text-emerald-700">{feedback}</p>}

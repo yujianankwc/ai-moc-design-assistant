@@ -149,6 +149,7 @@ export default function QuickSmallBatchPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          projectId: context.projectId?.trim() || undefined,
           sourceType: "small_batch",
           contactPhoneOrWechat: contact.trim(),
           contactPreference: contactHint.trim(),
@@ -192,10 +193,10 @@ export default function QuickSmallBatchPage() {
       <section className="mx-auto max-w-2xl">
         <QuickSuccessCard
           mode="compact"
-          title="这条推进意向已经记下来了"
-          summary="现在可以继续查看当前阶段和下一步建议，再决定这条方向要不要继续往下走。"
+          title="这次试做已经帮你记下了"
+          summary="现在你可以继续看这条方向的下一步，也可以稍后再回来继续推进。"
           stageLabel="已提交意向"
-          nextSuggestion="继续看试做路径"
+          nextSuggestion="继续看这次试做"
           eta="预计 24 小时内会有人继续跟进这条路径。"
           footerHint="这一步只是先记下试做方向，不等于最终打样或量产结论。"
           items={[
@@ -206,16 +207,16 @@ export default function QuickSmallBatchPage() {
           actions={
             <>
               <Link
-                href={submittedIntentId ? `/intents/${submittedIntentId}` : "/intents"}
+                href={submittedIntentId ? `/intents/${submittedIntentId}` : "/projects"}
                 className="relative inline-flex items-center justify-center rounded-xl bg-amber-400 px-4 py-2.5 font-bold text-amber-950 shadow-[0_4px_0_0_#d97706] transition-all duration-200 hover:bg-amber-300 active:translate-y-1 active:shadow-none"
               >
-                继续看当前阶段
+                去我的看看
               </Link>
               <Link
                 href={buildQuickResultHref(context)}
                 className="relative inline-flex items-center justify-center rounded-xl border-2 border-slate-200 bg-white px-4 py-2.5 font-bold text-slate-700 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 active:translate-y-1 active:shadow-none"
               >
-                回到方向判断页
+                回到刚才结果
               </Link>
             </>
           }
@@ -228,17 +229,17 @@ export default function QuickSmallBatchPage() {
     <section className="mx-auto max-w-4xl space-y-6">
       <section className="rounded-3xl border-2 border-amber-100 bg-gradient-to-b from-amber-50/60 to-white p-6 shadow-[0_12px_30px_-18px_rgba(217,119,6,0.35)] sm:p-8">
         <p className="inline-flex items-center rounded-full border-2 border-amber-200 bg-white px-3 py-1 text-xs font-bold text-amber-800">
-          当前路径 · 试做路径
+          第 2 步 · 先下单试做
         </p>
-        <h1 className="mt-3 text-2xl font-bold text-slate-900">这次你想拿它来干嘛？</h1>
+        <h1 className="mt-3 text-2xl font-bold text-slate-900">这次你想先怎么试做？</h1>
         <p className="mt-2 text-sm leading-6 text-slate-600">
-          {pathJudgement}。这条路径适合先验证方向是否值得继续推进，先做一版试做，更容易判断体量、包装和接受度。
+          {pathJudgement}。这一步适合先做一版，看看这个方向做出来是不是成立。
         </p>
         {context.idea ? <p className="mt-3 text-xs font-medium text-slate-500">当前创意：{context.idea}</p> : null}
       </section>
 
       <section className="rounded-3xl border-2 border-slate-100 bg-white p-6 shadow-sm sm:p-8">
-        <h2 className="text-lg font-bold text-slate-900">用途选择</h2>
+        <h2 className="text-lg font-bold text-slate-900">你想拿这版去做什么？</h2>
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           {usageOptions.map((option) => {
             const active = usageGoal === option.value;
@@ -262,7 +263,7 @@ export default function QuickSmallBatchPage() {
       </section>
 
       <section className="rounded-3xl border-2 border-blue-100 bg-blue-50/50 p-6 shadow-sm sm:p-8">
-        <h2 className="text-lg font-bold text-slate-900">推荐方案</h2>
+        <h2 className="text-lg font-bold text-slate-900">系统先给你一版推荐</h2>
         <p className="mt-2 text-sm text-slate-600">当前判断：{pathJudgement}。{selectedUsage.recommendation}</p>
         <div className="mt-4 grid gap-3 md:grid-cols-3">
           <div className="rounded-2xl bg-white p-4 shadow-sm">
@@ -281,7 +282,7 @@ export default function QuickSmallBatchPage() {
       </section>
 
       <section className="rounded-3xl border-2 border-slate-100 bg-white p-6 shadow-sm sm:p-8">
-        <h2 className="text-lg font-bold text-slate-900">你也可以自己微调</h2>
+        <h2 className="text-lg font-bold text-slate-900">如果你想，也可以自己改一下</h2>
 
         <div className="mt-5 space-y-5">
           <div>
@@ -376,8 +377,8 @@ export default function QuickSmallBatchPage() {
       <section className="rounded-3xl border-2 border-slate-100 bg-white p-6 shadow-sm sm:p-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-slate-900">预估报价</h2>
-            <p className="mt-2 text-sm text-slate-600">先看总价区间，再决定要不要往下推进。</p>
+        <h2 className="text-lg font-bold text-slate-900">大概多少钱</h2>
+            <p className="mt-2 text-sm text-slate-600">先看一个大概区间，再决定要不要继续。</p>
           </div>
           <button
             type="button"
@@ -400,8 +401,8 @@ export default function QuickSmallBatchPage() {
         </div>
 
         <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 text-sm leading-7 text-slate-600">
-          <p className="font-bold text-slate-800">当前建议：去看试做路径</p>
-          <p>当前状态仍属于方向推进阶段，最终报价和打样结果需进一步确认。</p>
+          <p className="font-bold text-slate-800">现在最适合：先做一版试做</p>
+          <p>这还不是最终定价和定稿，只是帮你先判断值不值得继续。</p>
         </div>
 
         <div className="mt-5 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 text-sm leading-7 text-slate-600">
@@ -430,8 +431,8 @@ export default function QuickSmallBatchPage() {
       </section>
 
       <section className="rounded-3xl border-2 border-slate-100 bg-white p-6 shadow-sm sm:p-8">
-        <h2 className="text-lg font-bold text-slate-900">把这版方案先记下来</h2>
-        <p className="mt-2 text-sm text-slate-600">提交后你可以在“我的意向”里继续跟进状态。</p>
+        <h2 className="text-lg font-bold text-slate-900">把这次试做先记下来</h2>
+        <p className="mt-2 text-sm text-slate-600">记下来之后，你可以在“我的”里继续看这条方向。</p>
         <div className="mt-5 grid gap-3 md:grid-cols-2">
           <input
             value={contact}
@@ -467,26 +468,26 @@ export default function QuickSmallBatchPage() {
             disabled={isSubmitting}
             className="relative inline-flex items-center justify-center rounded-xl bg-amber-400 px-5 py-3 text-sm font-bold text-amber-950 shadow-[0_4px_0_0_#d97706] transition-all duration-200 hover:bg-amber-300 active:translate-y-1 active:shadow-none disabled:pointer-events-none disabled:opacity-60"
           >
-            {isSubmitting ? "提交中..." : "提交这条推进意向"}
+            {isSubmitting ? "提交中..." : "先下单试做"}
           </button>
           <Link
-            href="/intents"
+            href="/projects"
             className="relative inline-flex items-center justify-center rounded-xl border-2 border-slate-200 bg-white px-5 py-3 text-sm font-bold text-slate-700 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 active:translate-y-1 active:shadow-none"
           >
-            先记下，稍后再看
+            先记下来，稍后再看
           </Link>
-          <Link href="/intents" className="text-sm font-medium text-slate-500 hover:text-slate-800 hover:underline">
-            查看我的意向
+          <Link href="/projects" className="text-sm font-medium text-slate-500 hover:text-slate-800 hover:underline">
+            去我的页面
           </Link>
         </div>
       </section>
 
       <div className="flex flex-wrap items-center gap-4 text-sm">
         <Link href={buildQuickPathHref("professional_upgrade", context)} className="font-medium text-slate-500 hover:text-slate-800 hover:underline">
-          改走完整方案
+          继续完善这个方向
         </Link>
         <Link href={buildQuickResultHref(context)} className="font-medium text-slate-500 hover:text-slate-800 hover:underline">
-          回到方向判断页
+          回到刚才结果
         </Link>
       </div>
     </section>

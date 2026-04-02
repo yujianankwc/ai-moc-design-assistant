@@ -1,6 +1,7 @@
 import type { QuickDirection, QuickPath, QuickScalePreference, QuickStyle } from "@/types/quick-entry";
 
 export type QuickPathContext = {
+  projectId: string;
   idea: string;
   direction: QuickDirection | "";
   style: QuickStyle | "";
@@ -31,6 +32,7 @@ export function readQuickPathContext(rawSearch: string): QuickPathContext {
       : "";
 
   return {
+    projectId: search.get("projectId")?.trim() ?? "",
     idea: search.get("idea")?.trim() ?? "",
     direction,
     style,
@@ -43,6 +45,7 @@ export function readQuickPathContext(rawSearch: string): QuickPathContext {
 
 export function buildQuickPathHref(path: "small_batch" | "creator_plan" | "professional_upgrade", context: QuickPathContext) {
   const params = new URLSearchParams();
+  if (context.projectId) params.set("projectId", context.projectId);
   if (context.idea) params.set("idea", context.idea);
   if (context.direction) params.set("direction", context.direction);
   if (context.style) params.set("style", context.style);
@@ -59,6 +62,7 @@ export function buildQuickPathHref(path: "small_batch" | "creator_plan" | "profe
 export function buildProfessionalProjectNewHref(context: QuickPathContext) {
   const params = new URLSearchParams();
   params.set("from", "quick");
+  if (context.projectId) params.set("projectId", context.projectId);
   if (context.idea) params.set("idea", context.idea);
   if (context.direction) params.set("direction", context.direction);
   if (context.style) params.set("style", context.style);
@@ -70,6 +74,7 @@ export function buildProfessionalProjectNewHref(context: QuickPathContext) {
 
 export function buildQuickResultHref(context: QuickPathContext) {
   const params = new URLSearchParams();
+  if (context.projectId) params.set("projectId", context.projectId);
   if (context.idea) params.set("idea", context.idea);
   if (context.direction) params.set("direction", context.direction);
   if (context.style) params.set("style", context.style);
@@ -77,4 +82,3 @@ export function buildQuickResultHref(context: QuickPathContext) {
   if (context.referenceImage) params.set("referenceImage", context.referenceImage);
   return `/quick/result?${params.toString()}`;
 }
-

@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createProjectAndMaybeOutputForDemoUser } from "@/services/project-service";
+import { createProjectAndMaybeOutputForCurrentVisitor } from "@/services/project-service";
 import type { ProjectFormPayload, ProjectStatus } from "@/types/project";
 
 type CreateProjectBody = {
@@ -19,7 +19,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "请求参数不完整" }, { status: 400 });
     }
 
-    const created = await createProjectAndMaybeOutputForDemoUser({
+    const created = await createProjectAndMaybeOutputForCurrentVisitor({
       status: body.status,
       payload: body.payload
     });

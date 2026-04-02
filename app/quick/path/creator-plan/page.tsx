@@ -53,6 +53,7 @@ export default function QuickCreatorPlanPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          projectId: context.projectId?.trim() || undefined,
           sourceType: "crowdfunding",
           contactPhoneOrWechat: contact.trim(),
           contactPreference: contactHint.trim(),
@@ -88,29 +89,28 @@ export default function QuickCreatorPlanPage() {
       <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
         <QuickSuccessCard
           mode="compact"
-          title="这条公开展示路径已经记下了"
-          summary={mode === "group_buy" ? "现在可以继续分享这条方向，先看看会不会有人愿意一起推进。" : "现在可以继续公开展示这条方向，先看看会不会有人愿意关注后续。"}
+          title="这条方向已经发布出来了"
+          summary={mode === "group_buy" ? "现在先看看会不会有人愿意一起关注这条方向。" : "现在先看看会不会有人想继续看这条方向。"}
           stageLabel="公开展示中"
-          nextSuggestion="继续公开展示"
+          nextSuggestion="继续分享出来看看"
           footerHint="这一步用于先收集关注和反馈，不等于已经进入真实众筹或预售。"
           items={[
             { label: "目标人数", value: `${targetPeople} 人` },
-            { label: "达标奖励", value: unlockText },
-            { label: "意向单编号", value: submittedIntentId }
+            { label: "达标奖励", value: unlockText }
           ]}
           actions={
             <>
               <Link
-                href={submittedIntentId ? `/intents/${submittedIntentId}` : "/intents"}
+                href={submittedIntentId ? `/intents/${submittedIntentId}` : "/projects"}
                 className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
               >
-                继续看当前阶段
+                去我的看看
               </Link>
               <Link
                 href={buildQuickResultHref(context)}
                 className="rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
               >
-                回到方向判断页
+                回到刚才结果
               </Link>
             </>
           }
@@ -122,12 +122,12 @@ export default function QuickCreatorPlanPage() {
   return (
     <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h1 className="text-lg font-semibold text-slate-900">团购 / 众筹（备选）</h1>
-        <p className="mt-2 text-sm text-slate-700">适合你想先拉一批支持者，再决定是否扩大投入。</p>
+        <h1 className="text-lg font-semibold text-slate-900">第 3 步 · 发布出来看看</h1>
+        <p className="mt-2 text-sm text-slate-700">适合你想先让大家看看这个方向，再决定要不要继续放大。</p>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">模式与目标</h2>
+        <h2 className="text-base font-semibold text-slate-900">你希望大家怎么参与？</h2>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
           <button
             type="button"
@@ -138,7 +138,7 @@ export default function QuickCreatorPlanPage() {
                 : "rounded-lg border border-slate-200 bg-white p-3 text-left text-sm text-slate-700 hover:bg-slate-50"
             }
           >
-            发起团购
+            一起关注这个方向
           </button>
           <button
             type="button"
@@ -149,7 +149,7 @@ export default function QuickCreatorPlanPage() {
                 : "rounded-lg border border-slate-200 bg-white p-3 text-left text-sm text-slate-700 hover:bg-slate-50"
             }
           >
-            发起众筹
+            先看大家投票和反馈
           </button>
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
@@ -168,7 +168,7 @@ export default function QuickCreatorPlanPage() {
             </button>
           ))}
         </div>
-        <p className="mt-2 text-xs text-slate-500">当前展示重点：{unlockText}</p>
+        <p className="mt-2 text-xs text-slate-500">如果关注够多，后面更适合继续推进：{unlockText}</p>
       </section>
 
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
@@ -198,13 +198,13 @@ export default function QuickCreatorPlanPage() {
             disabled={isLaunching}
             className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
           >
-            {isLaunching ? "正在记下这一步..." : "记下公开展示路径"}
+            {isLaunching ? "正在记下这一步..." : "发布出来看看"}
           </button>
           <Link
             href={buildQuickPathHref("small_batch", context)}
             className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
           >
-            改走试做路径
+            还是先下单试做
           </Link>
         </div>
         {feedback && <p className="mt-2 text-xs text-emerald-700">{feedback}</p>}

@@ -1,25 +1,73 @@
 import Link from "next/link";
+import ShowcaseVisual from "@/components/showcase-visual";
 import {
   getShowcaseProjectsBySort,
+  type ShowcaseJudgement,
   type ShowcaseCategory,
   type ShowcaseSortKey
 } from "@/data/showcase-projects";
+import {
+  mapIntentSourceTypeToJudgement,
+  mapProjectWithIntentToUnifiedStage
+} from "@/lib/project-language";
+import { mapProjectCategoryToShowcaseCategory, SHOWCASE_CATEGORY_FILTERS } from "@/lib/showcase-category";
+import { getQuickProjectPreviewImageUrl, listProjectsForCurrentVisitor } from "@/services/project-service";
+import type { ProjectRow } from "@/types/project";
 
-const categories: Array<ShowcaseCategory | "全部"> = [
-  "全部",
-  "城市文创",
-  "高校主题",
-  "文博纪念",
-  "家庭场景",
-  "奇幻场景",
-  "机械载具"
-];
+const categories: Array<ShowcaseCategory | "全部"> = SHOWCASE_CATEGORY_FILTERS;
 
 const sortOptions: Array<{ key: ShowcaseSortKey; label: string }> = [
-  { key: "latest", label: "最新发布" },
   { key: "popular", label: "最受欢迎" },
-  { key: "trial", label: "值得试做" }
+  { key: "latest", label: "最新发布" }
 ];
+
+type ShowcaseCardItem = {
+  id: string;
+  title: string;
+  category: ShowcaseCategory;
+  stage: string;
+  judgement: ShowcaseJudgement;
+  coverGradient: string;
+  imageUrl?: string | null;
+  href: string;
+  actionLabel: string;
+  sourceLabel?: string;
+  featuredAtOrder: number;
+  sortWeight: { latest: number; popular: number; trial: number };
+};
+
+function mapRealProjectToShowcaseCard(item: ProjectRow): ShowcaseCardItem | null {
+  if (item.linked_intent?.source_type !== "crowdfunding") return null;
+  const showcaseControl = item.linked_intent.showcase_control;
+  if (showcaseControl?.paused) return null;
+  const category = mapProjectCategoryToShowcaseCategory(item.category);
+  const judgement = mapIntentSourceTypeToJudgement(item.linked_intent.source_type);
+  const latestOrder = new Date(item.linked_intent.updated_at).getTime();
+  const featuredBoost = showcaseControl?.featured ? 40 : 0;
+  const homepageBoost = showcaseControl?.homepage ? 60 : 0;
+  return {
+    id: item.id,
+    title: item.title || "未命名项目",
+    category,
+    stage: mapProjectWithIntentToUnifiedStage({
+      projectStatus: item.status,
+      intentStatus: item.linked_intent.status,
+      intentSourceType: item.linked_intent.source_type
+    }),
+    judgement,
+    coverGradient: "from-violet-100 via-fuchsia-50 to-white",
+    imageUrl: getQuickProjectPreviewImageUrl(item.notes_for_factory),
+    href: `/showcase/${item.id}`,
+    actionLabel: "看看这个方向",
+    sourceLabel: "真实项目",
+    featuredAtOrder: latestOrder + homepageBoost + featuredBoost,
+    sortWeight: {
+      latest: 99 + homepageBoost + featuredBoost,
+      popular: 92 + homepageBoost + featuredBoost,
+      trial: 90 + featuredBoost + Math.floor(homepageBoost / 2)
+    }
+  };
+}
 
 export default async function ShowcasePage({
   searchParams
@@ -29,45 +77,72 @@ export default async function ShowcasePage({
   const resolvedSearch = (await searchParams) || {};
   const categoryRaw = Array.isArray(resolvedSearch.category) ? resolvedSearch.category[0] : resolvedSearch.category;
   const sortRaw = Array.isArray(resolvedSearch.sort) ? resolvedSearch.sort[0] : resolvedSearch.sort;
+  const focusRaw = Array.isArray(resolvedSearch.focus) ? resolvedSearch.focus[0] : resolvedSearch.focus;
   const selectedCategory = categories.includes((categoryRaw || "") as ShowcaseCategory | "全部")
     ? ((categoryRaw as ShowcaseCategory | "全部") || "全部")
     : "全部";
   const sort = sortOptions.some((item) => item.key === sortRaw) ? (sortRaw as ShowcaseSortKey) : "popular";
+  const isLiveFocus = focusRaw === "live";
 
-  const items = getShowcaseProjectsBySort(sort).filter((item) =>
-    selectedCategory === "全部" ? true : item.category === selectedCategory
-  );
+  let realProjects: ProjectRow[] = [];
+  try {
+    realProjects = await listProjectsForCurrentVisitor();
+  } catch {
+    realProjects = [];
+  }
+
+  const staticItems: ShowcaseCardItem[] = getShowcaseProjectsBySort(sort).map((item) => ({
+    id: item.slug,
+    title: item.title,
+    category: item.category,
+    stage: item.stage,
+    judgement: item.judgement,
+    coverGradient: item.coverGradient,
+    imageUrl: null,
+    href: `/showcase/${item.slug}`,
+    actionLabel: "看看这个方向",
+    featuredAtOrder: 0,
+    sortWeight: item.sortWeight
+  }));
+
+  const dynamicItems = realProjects.map(mapRealProjectToShowcaseCard).filter(Boolean) as ShowcaseCardItem[];
+  const sortedDynamicItems = [...dynamicItems].sort((a, b) => b.featuredAtOrder - a.featuredAtOrder);
+  const baseItems = isLiveFocus
+    ? sortedDynamicItems
+    : dynamicItems.length > 0
+      ? sortedDynamicItems
+      : staticItems;
+  const items = baseItems
+    .filter((item) => (selectedCategory === "全部" ? true : item.category === selectedCategory))
+    .sort((a, b) => b.sortWeight[sort] - a.sortWeight[sort]);
 
   return (
     <section className="space-y-6">
-      <div className="rounded-[28px] border-2 border-amber-100 bg-gradient-to-br from-amber-50 via-white to-orange-50 p-6 shadow-[0_12px_36px_-22px_rgba(217,119,6,0.35)] sm:p-8">
-        <p className="inline-flex rounded-full border border-amber-200 bg-white px-3 py-1 text-xs font-bold text-amber-800">
-          灵感广场
-        </p>
-        <h1 className="mt-3 text-2xl font-bold text-slate-900 sm:text-3xl">别人已经在这样玩了</h1>
-        <p className="mt-2 max-w-2xl text-sm text-slate-600">
-          这里不是素材库，而是正在被推进的积木创意。你可以先看看哪些方向更值得试做、哪些题材更有人气。
-        </p>
+      <div className="page-hero bg-[radial-gradient(circle_at_top_left,_rgba(253,230,138,0.4),_transparent_30%),radial-gradient(circle_at_82%_26%,_rgba(196,181,253,0.18),_transparent_26%),linear-gradient(180deg,rgba(255,251,235,0.78),rgba(255,255,255,0.9))]">
+        <h1 className="display-title text-4xl font-black sm:text-5xl">别人已经在这样玩了</h1>
+        <p className="mt-3 text-sm text-slate-600">先看图，再点进去看看。</p>
       </div>
 
-      <section className="rounded-3xl border-2 border-slate-100 bg-white p-5 shadow-sm sm:p-6">
+      <section className="page-section p-5 sm:p-6">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0">
             {categories.map((category) => (
               <Link
                 key={category}
                 href={`/showcase${category === "全部" ? "" : `?category=${encodeURIComponent(category)}&sort=${sort}`}`}
-                className={`shrink-0 rounded-full px-4 py-1.5 text-xs font-bold ${
-                  selectedCategory === category
-                    ? "border-2 border-amber-300 bg-amber-50 text-amber-900"
-                    : "border-2 border-slate-200 bg-white text-slate-600 hover:border-amber-200 hover:bg-amber-50/50"
-                }`}
+                className={`filter-chip ${selectedCategory === category ? "filter-chip-active" : ""}`}
               >
                 {category}
               </Link>
             ))}
           </div>
           <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0">
+            <Link
+              href="/showcase?focus=live&sort=latest"
+              className={`filter-chip ${isLiveFocus ? "filter-chip-active" : ""}`}
+            >
+              最近公开展示
+            </Link>
             {sortOptions.map((option) => (
               <Link
                 key={option.key}
@@ -75,11 +150,7 @@ export default async function ShowcasePage({
                   ...(selectedCategory === "全部" ? {} : { category: selectedCategory }),
                   sort: option.key
                 }).toString()}`}
-                className={`shrink-0 rounded-full px-4 py-1.5 text-xs font-bold ${
-                  sort === option.key
-                    ? "border-2 border-slate-900 bg-slate-900 text-white"
-                    : "border-2 border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
-                }`}
+                className={`filter-chip ${sort === option.key ? "filter-chip-dark" : ""}`}
               >
                 {option.label}
               </Link>
@@ -88,41 +159,49 @@ export default async function ShowcasePage({
         </div>
       </section>
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-        {items.map((item) => (
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+        {items.map((item, index) => (
           <article
-            key={item.slug}
-            className="overflow-hidden rounded-3xl border-2 border-slate-100 bg-white shadow-sm transition-all hover:-translate-y-1 hover:border-amber-300 hover:shadow-[0_10px_0_0_#fde68a]"
+            key={item.id}
+            className={`visual-card flex h-full flex-col ${index === 0 ? "md:col-span-2 xl:col-span-2" : ""}`}
           >
-            <div className={`h-44 p-5 bg-gradient-to-br ${item.coverGradient}`}>
-              <div className="flex items-start justify-between gap-3">
+            <div className={`cover-frame p-4 ${index === 0 ? "h-64 sm:h-80" : "h-52 sm:h-60"}`}>
+              <ShowcaseVisual
+                title={item.title}
+                category={item.category}
+                imageUrl={item.imageUrl}
+                className="absolute inset-0"
+              />
+              <div className="relative z-10 flex items-start justify-between gap-3">
                 <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-slate-700">{item.category}</span>
-                <span className="rounded-full bg-slate-900/85 px-3 py-1 text-xs font-bold text-white">{item.stage}</span>
-              </div>
-              <p className="mt-6 max-w-[16rem] text-lg font-bold text-slate-900">{item.title}</p>
-              <p className="mt-2 max-w-[18rem] text-sm text-slate-700">{item.hook}</p>
-            </div>
-            <div className="p-5">
-              <p className={`text-xs font-bold ${item.coverAccentClass}`}>{item.popularityHint}</p>
-              <p className="mt-2 text-base font-bold text-slate-900">{item.judgement}</p>
-              <p className="mt-2 text-sm text-slate-600">{item.recentStatus}</p>
-              <div className="flex flex-wrap gap-2">
-                {item.tags.map((tag) => (
-                  <span key={tag} className="rounded-full bg-slate-100 px-3 py-1 text-[11px] font-semibold text-slate-600">
-                    {tag}
+                {index === 0 ? (
+                  <span className="rounded-full bg-slate-950/78 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white">
+                    先看这个
                   </span>
-                ))}
+                ) : null}
               </div>
-              <div className="mt-4 flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-xs font-medium text-slate-400">当前建议</p>
-                  <p className="mt-1 text-xs leading-5 text-slate-500">{item.nextSuggestion}</p>
-                </div>
-                <Link
-                  href={`/showcase/${item.slug}`}
-                  className="shrink-0 inline-flex items-center text-sm font-bold text-amber-700 hover:text-amber-900"
+              <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-slate-950/78 via-slate-950/34 to-transparent px-4 pb-4 pt-14 sm:px-5 sm:pb-5">
+                <h2
+                  className={`max-w-[86%] line-clamp-2 font-black tracking-[-0.05em] text-white ${
+                    index === 0 ? "text-[1.95rem] leading-[0.92] sm:text-[2.35rem]" : "text-[1.45rem] leading-[0.95] sm:text-[1.65rem]"
+                  }`}
                 >
-                  看看这个方向
+                  {item.title}
+                </h2>
+                <p className={`max-w-[78%] line-clamp-1 font-semibold text-white/90 ${index === 0 ? "mt-2 text-sm leading-6 sm:text-[0.95rem]" : "mt-2 text-xs leading-5 sm:text-sm"}`}>
+                  {item.judgement}
+                </p>
+              </div>
+            </div>
+            <div className={`flex flex-1 flex-col p-6 ${index === 0 ? "pt-6 sm:px-7 sm:pb-7" : "pt-5"}`}>
+              <div className="mt-auto border-t border-slate-100/80 pt-4">
+                <Link
+                  href={item.href}
+                  className={`inline-flex w-full items-center justify-center rounded-full bg-slate-950 px-4 font-bold text-white transition hover:bg-slate-800 ${
+                    index === 0 ? "py-3.5 text-base" : "py-3 text-sm"
+                  }`}
+                >
+                  {item.actionLabel}
                 </Link>
               </div>
             </div>
@@ -130,12 +209,12 @@ export default async function ShowcasePage({
         ))}
       </div>
 
-      <section className="rounded-3xl border-2 border-slate-100 bg-white p-6 text-center shadow-sm">
-        <h2 className="text-lg font-bold text-slate-900">你也可以先试一个自己的方向</h2>
-        <p className="mt-2 text-sm text-slate-600">先得到一版方向判断，再决定是否继续推进。</p>
+      <section className="page-section text-center">
+        <h2 className="section-title">你也可以先试一个自己的方向</h2>
+        <p className="section-copy mt-2">先试一下，再决定要不要继续。</p>
         <Link
           href="/quick/new"
-          className="mt-4 inline-flex rounded-xl bg-amber-400 px-5 py-2.5 text-sm font-bold text-amber-950 shadow-[0_4px_0_0_#d97706] transition-all hover:bg-amber-300"
+          className="primary-cta mt-4"
         >
           先试一个创意
         </Link>
