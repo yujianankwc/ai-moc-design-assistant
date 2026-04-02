@@ -56,7 +56,7 @@ git push origin main
 SSH 登录 ECS 后，复制粘贴以下命令：
 
 ```bash
-cd /root/ai-moc-design-assistant && git pull origin main && npm install && npm run build && pm2 restart ai-moc
+cd /root/ai-moc-design-assistant && ./deploy.sh
 ```
 
 分步解释：
@@ -64,10 +64,13 @@ cd /root/ai-moc-design-assistant && git pull origin main && npm install && npm r
 | 步骤 | 命令 | 说明 |
 |------|------|------|
 | 1 | `cd /root/ai-moc-design-assistant` | 进入项目目录 |
-| 2 | `git pull origin main` | 从 GitHub 拉取最新代码 |
-| 3 | `npm install` | 安装新增依赖（没有新依赖也不影响） |
-| 4 | `npm run build` | 构建生产版本 |
-| 5 | `pm2 restart ai-moc` | 重启应用 |
+| 2 | `./deploy.sh` | 拉取最新代码、安装依赖、构建并重启 `ai-moc-design-assistant` |
+
+如果服务器仓库被手动改脏了，可以强制对齐到 GitHub 最新 `main`，同时保留 `env.local`、`.env.local`、`.env.local.bak`：
+
+```bash
+cd /root/ai-moc-design-assistant && ./deploy.sh --force-sync
+```
 
 ---
 
@@ -78,21 +81,21 @@ cd /root/ai-moc-design-assistant && git pull origin main && npm install && npm r
 pm2 list
 
 # 查看应用日志（实时）
-pm2 logs ai-moc
+pm2 logs ai-moc-design-assistant
 
 # 查看最近 200 行日志
-pm2 logs ai-moc --lines 200
+pm2 logs ai-moc-design-assistant --lines 200
 
 # 重启应用
-pm2 restart ai-moc
+pm2 restart ai-moc-design-assistant
 
 # 停止应用
-pm2 stop ai-moc
+pm2 stop ai-moc-design-assistant
 
 # 删除应用后重新启动（端口冲突时用）
-pm2 delete ai-moc
+pm2 delete ai-moc-design-assistant
 cd /root/ai-moc-design-assistant
-pm2 start "node_modules/.bin/next start -p 3000" --name ai-moc
+pm2 start "node_modules/.bin/next start -p 3000" --name ai-moc-design-assistant
 
 # 查看 Nginx 配置是否正确
 nginx -t
@@ -111,8 +114,7 @@ nginx -s reload
 
 ```bash
 # 如果本地改动不需要保留
-git restore -- next-env.d.ts
-git pull origin main
+./deploy.sh --force-sync
 
 # 如果本地改动需要保留
 git stash
@@ -134,8 +136,8 @@ lsof -iTCP:3000
 kill -9 <PID>
 
 # 或者通过 PM2 清理
-pm2 delete ai-moc
-pm2 start "node_modules/.bin/next start -p 3000" --name ai-moc
+pm2 delete ai-moc-design-assistant
+pm2 start "node_modules/.bin/next start -p 3000" --name ai-moc-design-assistant
 ```
 
 ---
@@ -231,7 +233,7 @@ npm run dev
 
 ```bash
 # 查看最近的图片生成日志（ECS 上）
-pm2 logs ai-moc --lines 100 | grep "image_generation"
+pm2 logs ai-moc-design-assistant --lines 100 | grep "image_generation"
 
 # 日志字段说明：
 # phase: primary_failed → 主模型失败
@@ -258,7 +260,7 @@ AI_IMAGE_ALIAS=nano_banana
 AI_IMAGE_ALIAS=default
 ```
 
-修改后需重新构建部署（`npm run build && pm2 restart ai-moc`）。
+修改后需重新构建部署（`./deploy.sh`）。
 
 ---
 
@@ -295,9 +297,10 @@ AI_IMAGE_ALIAS=default
 | 本地开发 | `npm run dev` |
 | 本地构建 | `npm run build` |
 | 推代码到 GitHub | `git add . && git commit -m "说明" && git push origin main` |
-| ECS 一键部署 | `cd /root/ai-moc-design-assistant && git pull origin main && npm install && npm run build && pm2 restart ai-moc-design-assistant` |
-| 看 ECS 日志 | `pm2 logs ai-moc --lines 200` |
-| 重启 ECS 应用 | `pm2 restart ai-moc` |
+| ECS 一键部署 | `cd /root/ai-moc-design-assistant && ./deploy.sh` |
+| ECS 强制对齐部署 | `cd /root/ai-moc-design-assistant && ./deploy.sh --force-sync` |
+| 看 ECS 日志 | `pm2 logs ai-moc-design-assistant --lines 200` |
+| 重启 ECS 应用 | `pm2 restart ai-moc-design-assistant` |
 | 看 PM2 状态 | `pm2 list` |
 | 生成邀请码 | `npm run invite:generate` |
 | 测试域名是否正常 | `curl -s https://aimoc.kuwanchao.com \| head -20` |
