@@ -11,11 +11,13 @@ import {
 } from "@/services/project-service";
 import { parseEditableVersion } from "@/lib/editable-version";
 import {
+  formatNextSuggestionLabel,
   formatIntentFollowupSummary,
   getIntentStatusExplanation,
   getStageExplanation,
   inferJudgementFromProjectSnapshot,
   inferIntentNextSuggestion,
+  inferNextSuggestionFromJudgement,
   mapIntentSourceTypeToJudgement,
   mapIntentSourceTypeToPathLabel,
   mapProjectCategoryToPathLabel,
