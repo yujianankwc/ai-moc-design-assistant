@@ -23,6 +23,7 @@ export type QuotePaymentMode = "deposit" | "full" | "crowdfunding_support";
 export type IntentSnapshotInput = {
   projectTitle?: string;
   resultSummary?: string;
+  intentKind?: "quick_publish" | "purchase_interest";
   selectedQuantity?: number;
   packageLevel?: string;
   designServiceLevel?: string;
@@ -41,7 +42,7 @@ export type CreateIntentInput = {
   projectId?: string;
   sourceType: IntentSourceType;
   contactName?: string;
-  contactPhoneOrWechat: string;
+  contactPhoneOrWechat?: string;
   contactPreference?: string;
   preferPriorityContact?: boolean;
   operatorNote?: string;

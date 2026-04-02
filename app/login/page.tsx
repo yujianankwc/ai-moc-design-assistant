@@ -1,14 +1,20 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useState } from "react";
-import { useRouter } from "next/navigation";
+import { FormEvent, Suspense, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [inviteCode, setInviteCode] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const nextPath = useMemo(() => {
+    const raw = searchParams.get("next")?.trim() || "";
+    if (!raw.startsWith("/") || raw.startsWith("//")) return "/";
+    return raw;
+  }, [searchParams]);
 
   const handleLogin = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -39,7 +45,7 @@ export default function LoginPage() {
       return;
     }
 
-    router.push("/");
+    router.push(nextPath || "/");
     router.refresh();
   };
 
@@ -89,5 +95,31 @@ export default function LoginPage() {
         </Link>
       </div>
     </section>
+  );
+}
+
+function LoginFallback() {
+  return (
+    <section className="mx-auto max-w-md space-y-6 pt-10">
+      <div className="space-y-3 text-center sm:text-left">
+        <p className="inline-flex items-center rounded-full border-2 border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
+          AI积木设计师 · 先开始
+        </p>
+        <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">正在准备登录页</h1>
+        <p className="text-sm font-medium text-slate-600">马上就好，你刚才的操作会继续保留。</p>
+      </div>
+
+      <div className="rounded-[28px] border-2 border-amber-100 bg-white p-6 shadow-[0_10px_30px_-18px_rgba(217,119,6,0.35)] sm:p-8">
+        <p className="text-sm font-medium text-slate-500">正在读取页面状态...</p>
+      </div>
+    </section>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginFallback />}>
+      <LoginContent />
+    </Suspense>
   );
 }

@@ -125,7 +125,7 @@ export default async function LandingPage() {
               看看值不值得继续做。
             </h1>
             <p className="mt-5 max-w-md text-base leading-8 text-slate-500">
-              先点进去试，再决定是先试做，还是先发出来看看。
+              先试一个创意，觉得不错就直接发出来，再看大家会不会支持它量产。
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <Link href="/quick/new" className="primary-cta px-7 py-3">
@@ -133,7 +133,7 @@ export default async function LandingPage() {
               </Link>
             </div>
             <Link href="/showcase" className="mt-5 inline-flex text-sm font-semibold text-slate-500 hover:text-slate-900">
-              先看看别人怎么玩
+              看看别人都发了什么
             </Link>
           </div>
           <div className="space-y-5 lg:pl-4">
@@ -163,11 +163,11 @@ export default async function LandingPage() {
       <section className="page-section rounded-[40px] px-6 py-8 sm:px-8 sm:py-10">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <h2 className="display-title text-4xl font-semibold tracking-[-0.06em] text-slate-950">先看看别人怎么玩。</h2>
-            <p className="mt-3 max-w-2xl text-sm leading-8 text-slate-500">挑一个你也想试的方向，点进去就行。</p>
+            <h2 className="display-title text-4xl font-semibold tracking-[-0.06em] text-slate-950">先看看别人都发了什么。</h2>
+            <p className="mt-3 max-w-2xl text-sm leading-8 text-slate-500">先看内容，再决定你想支持哪个方向，或者自己也发一个。</p>
           </div>
           <Link href="/showcase" className="text-sm font-semibold text-slate-900 hover:text-slate-600">
-            看更多方向
+            去看内容
           </Link>
         </div>
         <div className="mt-10 grid gap-6 xl:grid-cols-12">
@@ -216,7 +216,7 @@ export default async function LandingPage() {
 
       <section className="page-section rounded-[32px] px-6 py-6 sm:px-8">
         <p className="text-center text-sm font-semibold text-slate-500 sm:text-base">
-          平台会定期从公开展示里挑出更适合量产的方向。
+          先让更多人发出来、投票，再慢慢挑出更适合量产的方向。
         </p>
       </section>
     </section>

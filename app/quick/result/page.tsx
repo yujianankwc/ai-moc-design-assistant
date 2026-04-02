@@ -4,10 +4,6 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
-  inferJudgementFromQuickInput,
-  inferNextSuggestionFromJudgement
-} from "@/lib/project-language";
-import {
   buildQuickEntryResult,
   readQuickAIResultFromSession,
   saveQuickAIResultToSession,
@@ -174,6 +170,7 @@ export default function QuickEntryResultPage() {
   const [imageProgress, setImageProgress] = useState(8);
   const [imageElapsedSeconds, setImageElapsedSeconds] = useState(0);
   const [referenceImageWasDropped, setReferenceImageWasDropped] = useState(false);
+  const [showAdvancedActions, setShowAdvancedActions] = useState(false);
   const autoRequestedKeyRef = useRef("");
   const imageAutoRequestedKeyRef = useRef("");
   const imageRequestSeqRef = useRef(0);
@@ -693,10 +690,7 @@ export default function QuickEntryResultPage() {
   }
 
   const isLoading = source === "ai" && !resolvedResult;
-  const projectJudgement = inferJudgementFromQuickInput(effectiveInput);
-  const projectNextSuggestion = inferNextSuggestionFromJudgement(projectJudgement);
-  const primaryPath: QuickPath = projectNextSuggestion === "生成完整方案" ? "professional_upgrade" : "small_batch";
-  const primaryCtaLabel = primaryPath === "professional_upgrade" ? "继续完善这个方向" : "先下单试做";
+  const primaryCtaLabel = "发布出来看看";
   const isImageGenerating = (imageStatus === "queued" || imageStatus === "generating") && !imageUrl;
   const hasTimedOutWaiting = isImageGenerating && imageElapsedSeconds >= IMAGE_RETRY_SECONDS;
   const shouldShowFailedCard = (!imageUrl && imageStatus === "failed") || hasTimedOutWaiting;
@@ -740,7 +734,13 @@ export default function QuickEntryResultPage() {
     } catch {
       // Some WebViews may block sessionStorage. Navigation should still work.
     }
-    const href = buildQuickPathHref(path, context);
+    let href = buildQuickPathHref(path, context);
+    if (path === "creator_plan") {
+      const creatorParams = new URLSearchParams(href.split("?")[1] || "");
+      creatorParams.set("autostart", "1");
+      creatorParams.set("launchToken", String(Date.now()));
+      href = `/quick/path/creator-plan?${creatorParams.toString()}`;
+    }
     const currentPath = window.location.pathname;
     const currentSearch = window.location.search;
     router.push(href);
@@ -783,7 +783,7 @@ export default function QuickEntryResultPage() {
         <div className="mt-4 space-y-3">
           <p className="soft-note max-w-2xl">先看结论，再点下面那个按钮就行。</p>
         </div>
-        {!isWaitingPrimaryView && !isLoading ? (
+        {!isLoading ? (
           <>
             <div className="mt-6">
               <div className="rounded-[24px] border border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,248,220,0.88),rgba(255,255,255,0.9))] p-5 shadow-[0_22px_40px_-34px_rgba(217,119,6,0.3)]">
@@ -995,50 +995,61 @@ export default function QuickEntryResultPage() {
         )}
       </section>
 
-      {!isWaitingPrimaryView && (
-        <section className="page-section bg-[linear-gradient(180deg,rgba(255,248,220,0.48),rgba(255,255,255,0.84))]">
-          <h2 className="section-title">你现在点哪个按钮</h2>
-          <p className="section-copy mt-2">先点主按钮就行。</p>
-          <div className="mt-5 space-y-4">
-            <div className="rounded-[30px] border border-amber-200/80 bg-[linear-gradient(180deg,rgba(255,248,220,0.92),rgba(255,255,255,0.9))] p-6 shadow-[0_24px_50px_-36px_rgba(217,119,6,0.3)]">
-              <p className="text-xs font-bold text-amber-700">推荐先点这个</p>
-              <p className="mt-3 text-3xl font-black tracking-tight text-slate-900">{primaryCtaLabel}</p>
-              <button
-                type="button"
-                onClick={() => goQuickPath(primaryPath)}
-                className="primary-cta mt-5 w-full text-base disabled:pointer-events-none disabled:opacity-60"
-              >
-                {primaryCtaLabel}
-              </button>
-            </div>
-            <div className="grid gap-3">
-              <button
-                type="button"
-                onClick={() => goQuickPath("creator_plan")}
-                className="w-full rounded-2xl border-2 border-slate-200 bg-white px-5 py-4 text-left text-sm font-bold text-slate-700 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 active:translate-y-1 active:shadow-none disabled:pointer-events-none disabled:opacity-60"
-              >
-                <span className="block text-base text-slate-900">先发布出来看看</span>
-              </button>
-            </div>
-          </div>
-          <div className="mt-4 flex flex-wrap items-center gap-4 border-t border-slate-100 pt-4">
+      <section className="page-section bg-[linear-gradient(180deg,rgba(255,248,220,0.48),rgba(255,255,255,0.84))]">
+        <h2 className="section-title">你现在点哪个按钮</h2>
+        <p className="section-copy mt-2">先发出来看看，再看大家会不会支持它继续往下做。</p>
+        <div className="mt-5 space-y-4">
+          <div className="rounded-[30px] border border-amber-200/80 bg-[linear-gradient(180deg,rgba(255,248,220,0.92),rgba(255,255,255,0.9))] p-6 shadow-[0_24px_50px_-36px_rgba(217,119,6,0.3)]">
+            <p className="text-xs font-bold text-amber-700">推荐先点这个</p>
+            <p className="mt-3 text-3xl font-black tracking-tight text-slate-900">{primaryCtaLabel}</p>
+            <p className="mt-2 text-sm text-slate-500">先把这个方向发出来，后面再慢慢补资料、看投票和购买反馈。</p>
             <button
               type="button"
-              onClick={() => goQuickPath("professional_upgrade")}
-              className="text-sm font-medium text-slate-500 hover:text-slate-800 hover:underline"
+              onClick={() => goQuickPath("creator_plan")}
+              disabled={isLoading || resultState === "generating"}
+              className="primary-cta mt-5 w-full text-base disabled:pointer-events-none disabled:opacity-60"
             >
-              先把这个方向补完整
-            </button>
-            <button
-              type="button"
-              onClick={() => handleQuickCorrection(correctionOptions[0]?.label || "更像核心主体")}
-              className="text-sm font-medium text-slate-500 hover:text-slate-800 hover:underline"
-            >
-              暂时先不推进，再换一个方向试试
+              {primaryCtaLabel}
             </button>
           </div>
-        </section>
-      )}
+          <button
+            type="button"
+            onClick={() => router.push("/quick/new")}
+            disabled={resultState === "generating"}
+            className="w-full rounded-2xl border-2 border-slate-200 bg-white px-5 py-4 text-left text-sm font-bold text-slate-700 shadow-[0_4px_0_0_#e2e8f0] transition-all duration-200 hover:border-slate-300 hover:bg-slate-50 active:translate-y-1 active:shadow-none"
+          >
+            <span className="block text-base text-slate-900">重新试一个方向</span>
+          </button>
+        </div>
+        <div className="mt-4 border-t border-slate-100 pt-4">
+          <button
+            type="button"
+            onClick={() => setShowAdvancedActions((prev) => !prev)}
+            disabled={isLoading || resultState === "generating"}
+            className="text-sm font-medium text-slate-500 hover:text-slate-800 hover:underline"
+          >
+            {showAdvancedActions ? "收起更多方式" : "更多方式继续推进"}
+          </button>
+          {showAdvancedActions && (
+            <div className="mt-4 flex flex-wrap items-center gap-4">
+              <button
+                type="button"
+                onClick={() => goQuickPath("small_batch")}
+                className="text-sm font-medium text-slate-500 hover:text-slate-800 hover:underline"
+              >
+                先做小批量试做
+              </button>
+              <button
+                type="button"
+                onClick={() => goQuickPath("professional_upgrade")}
+                className="text-sm font-medium text-slate-500 hover:text-slate-800 hover:underline"
+              >
+                先把这个方向补完整
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
     </section>
   );
 }

@@ -16,9 +16,8 @@ export const viewport: Viewport = {
 };
 
 const navItems = [
-  { href: "/", label: "首页", shortLabel: "首页" },
   { href: "/quick/new", label: "试创意", shortLabel: "试创意" },
-  { href: "/showcase", label: "看别人怎么玩", shortLabel: "看别人" },
+  { href: "/showcase", label: "看内容", shortLabel: "看内容" },
   { href: "/projects", label: "我的", shortLabel: "我的" }
 ];
 
@@ -46,7 +45,7 @@ export default function RootLayout({
                 </SafeNavLink>
                 <p className="mt-1 text-xs tracking-[0.14em] text-slate-400">人人都是积木设计师</p>
               </div>
-              <nav className="grid w-full grid-cols-4 gap-2 text-xs sm:hidden">
+              <nav className="grid w-full grid-cols-3 gap-2 text-xs sm:hidden">
                 {navItems.map((item) => (
                   <SafeNavLink
                     key={item.href}

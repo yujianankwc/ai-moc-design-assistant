@@ -23,11 +23,7 @@ function isSourceType(value: string): value is IntentSourceType {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as CreateIntentInput;
-    if (
-      !body ||
-      !isSourceType(String(body.sourceType || "")) ||
-      !String(body.contactPhoneOrWechat || "").trim()
-    ) {
+    if (!body || !isSourceType(String(body.sourceType || ""))) {
       return NextResponse.json({ error: "意向单参数不完整，请检查后重试。" }, { status: 400 });
     }
 

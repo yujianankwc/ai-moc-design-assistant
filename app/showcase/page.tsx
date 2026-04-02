@@ -58,7 +58,7 @@ function mapRealProjectToShowcaseCard(item: ProjectRow): ShowcaseCardItem | null
     coverGradient: "from-violet-100 via-fuchsia-50 to-white",
     imageUrl: getQuickProjectPreviewImageUrl(item.notes_for_factory),
     href: `/showcase/${item.id}`,
-    actionLabel: "看看这个方向",
+    actionLabel: "去投票",
     sourceLabel: "真实项目",
     featuredAtOrder: latestOrder + homepageBoost + featuredBoost,
     sortWeight: {
@@ -100,7 +100,7 @@ export default async function ShowcasePage({
     coverGradient: item.coverGradient,
     imageUrl: null,
     href: `/showcase/${item.slug}`,
-    actionLabel: "看看这个方向",
+    actionLabel: "去投票",
     featuredAtOrder: 0,
     sortWeight: item.sortWeight
   }));
@@ -119,8 +119,8 @@ export default async function ShowcasePage({
   return (
     <section className="space-y-6">
       <div className="page-hero bg-[radial-gradient(circle_at_top_left,_rgba(253,230,138,0.4),_transparent_30%),radial-gradient(circle_at_82%_26%,_rgba(196,181,253,0.18),_transparent_26%),linear-gradient(180deg,rgba(255,251,235,0.78),rgba(255,255,255,0.9))]">
-        <h1 className="display-title text-4xl font-black sm:text-5xl">别人已经在这样玩了</h1>
-        <p className="mt-3 text-sm text-slate-600">先看图，再点进去看看。</p>
+        <h1 className="display-title text-4xl font-black sm:text-5xl">大家已经发了这些方向</h1>
+        <p className="mt-3 text-sm text-slate-600">先看内容，再决定你想支持哪个方向。</p>
       </div>
 
       <section className="page-section p-5 sm:p-6">
@@ -210,8 +210,8 @@ export default async function ShowcasePage({
       </div>
 
       <section className="page-section text-center">
-        <h2 className="section-title">你也可以先试一个自己的方向</h2>
-        <p className="section-copy mt-2">先试一下，再决定要不要继续。</p>
+        <h2 className="section-title">你也可以先发一个自己的方向</h2>
+        <p className="section-copy mt-2">先试一下，觉得不错就发出来看看。</p>
         <Link
           href="/quick/new"
           className="primary-cta mt-4"

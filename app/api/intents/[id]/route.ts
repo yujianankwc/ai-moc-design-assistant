@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { getIntentDetailForCurrentVisitor } from "@/services/project-service";
+import {
+  getIntentDetailForCurrentVisitor,
+  updateIntentForCurrentVisitor
+} from "@/services/project-service";
 
 function shouldFallbackToIntentDetailUnavailable(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || "");
@@ -30,6 +33,61 @@ export async function GET(_: Request, context: { params: Promise<{ id: string }>
       });
     }
     const message = error instanceof Error ? error.message : "意向单详情读取失败";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
+  try {
+    const { id } = await context.params;
+    const body = (await request.json().catch(() => null)) as
+      | {
+          contactPhoneOrWechat?: string;
+          contactPreference?: string;
+          preferPriorityContact?: boolean;
+          snapshot?: {
+            intentKind?: "quick_publish" | "purchase_interest";
+            saleMode?: string;
+            crowdfundingTargetPeople?: number;
+            uiContext?: Record<string, unknown>;
+          };
+        }
+      | null;
+
+    if (!body) {
+      return NextResponse.json({ error: "更新参数不完整。" }, { status: 400 });
+    }
+
+    await updateIntentForCurrentVisitor({
+      intentId: id,
+      contactPhoneOrWechat:
+        typeof body.contactPhoneOrWechat === "string" ? body.contactPhoneOrWechat : undefined,
+      contactPreference:
+        typeof body.contactPreference === "string" ? body.contactPreference : undefined,
+      preferPriorityContact:
+        typeof body.preferPriorityContact === "boolean" ? body.preferPriorityContact : undefined,
+      snapshot: body.snapshot
+        ? {
+            intentKind:
+              body.snapshot.intentKind === "quick_publish" || body.snapshot.intentKind === "purchase_interest"
+                ? body.snapshot.intentKind
+                : undefined,
+            saleMode: typeof body.snapshot.saleMode === "string" ? body.snapshot.saleMode : undefined,
+            crowdfundingTargetPeople:
+              typeof body.snapshot.crowdfundingTargetPeople === "number"
+                ? body.snapshot.crowdfundingTargetPeople
+                : undefined,
+            uiContext:
+              body.snapshot.uiContext && typeof body.snapshot.uiContext === "object"
+                ? body.snapshot.uiContext
+                : undefined
+          }
+        : undefined
+    });
+
+    return NextResponse.json({ success: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "意向单更新失败";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

@@ -1505,11 +1505,40 @@ function ensureServiceRequestStatus(input: string): ServiceRequestStatus {
   return input as ServiceRequestStatus;
 }
 
+function normalizeIntentSnapshotKind(value: unknown): "quick_publish" | "purchase_interest" | null {
+  return value === "quick_publish" || value === "purchase_interest" ? value : null;
+}
+
+const LIGHTWEIGHT_INTENT_CONTACT_PLACEHOLDER = "待补充（公开发布后补）";
+
+function isLightweightCrowdfundingIntent(input: CreateIntentInput) {
+  if (input.sourceType !== "crowdfunding") return false;
+  const intentKind = normalizeIntentSnapshotKind(input.snapshot?.intentKind);
+  return intentKind === "quick_publish" || intentKind === "purchase_interest";
+}
+
+function buildIntentSnapshotUiContext(input: CreateIntentInput["snapshot"]) {
+  return {
+    ...(input.uiContext ?? {}),
+    ...(normalizeIntentSnapshotKind(input.intentKind) ? { intentKind: input.intentKind } : {})
+  };
+}
+
+function resolveIntentContactValue(input: {
+  contactPhoneOrWechat?: string | null;
+  allowPlaceholder: boolean;
+}) {
+  const trimmed = (input.contactPhoneOrWechat || "").trim();
+  if (trimmed) return trimmed;
+  return input.allowPlaceholder ? LIGHTWEIGHT_INTENT_CONTACT_PLACEHOLDER : "";
+}
+
 export async function createIntentForCurrentVisitor(input: CreateIntentInput) {
   const supabase = getSupabaseServerClient();
   const currentVisitorUser = await ensureCurrentVisitorUser();
+  const allowPlaceholderContact = isLightweightCrowdfundingIntent(input);
 
-  if (!input.contactPhoneOrWechat?.trim()) {
+  if (!input.contactPhoneOrWechat?.trim() && !allowPlaceholderContact) {
     throw new Error("请填写手机号或微信");
   }
 
@@ -1536,7 +1565,10 @@ export async function createIntentForCurrentVisitor(input: CreateIntentInput) {
       status: "new",
       priority: "normal",
       contact_name: input.contactName?.trim() || null,
-      contact_phone_or_wechat: input.contactPhoneOrWechat.trim(),
+      contact_phone_or_wechat: resolveIntentContactValue({
+        contactPhoneOrWechat: input.contactPhoneOrWechat,
+        allowPlaceholder: allowPlaceholderContact
+      }),
       contact_preference: input.contactPreference?.trim() || null,
       prefer_priority_contact: Boolean(input.preferPriorityContact),
       operator_note: input.operatorNote?.trim() || null
@@ -1564,7 +1596,7 @@ export async function createIntentForCurrentVisitor(input: CreateIntentInput) {
     estimated_total_price_max: snapshotPayload.estimatedTotalPriceMax ?? null,
     discount_amount: snapshotPayload.discountAmount ?? 0,
     pricing_meta: snapshotPayload.pricingMeta ?? {},
-    ui_context: snapshotPayload.uiContext ?? {}
+    ui_context: buildIntentSnapshotUiContext(snapshotPayload)
   });
   if (snapshotError) throw new Error(`意向快照写入失败: ${snapshotError.message}`);
 
@@ -1582,6 +1614,138 @@ export async function createIntentForCurrentVisitor(input: CreateIntentInput) {
 
 export async function createIntentForDemoUser(input: CreateIntentInput) {
   return createIntentForCurrentVisitor(input);
+}
+
+export async function updateIntentForCurrentVisitor(input: {
+  intentId: string;
+  contactPhoneOrWechat?: string;
+  contactPreference?: string;
+  preferPriorityContact?: boolean;
+  snapshot?: {
+    intentKind?: "quick_publish" | "purchase_interest";
+    saleMode?: string;
+    crowdfundingTargetPeople?: number;
+    uiContext?: Record<string, unknown>;
+  };
+}) {
+  const supabase = getSupabaseServerClient();
+  const currentVisitorUser = await ensureCurrentVisitorUser();
+
+  const { data: intentData, error: intentError } = await supabase
+    .from("intent_orders")
+    .select("id,user_id,source_type,status,contact_phone_or_wechat,contact_preference,prefer_priority_contact")
+    .eq("id", input.intentId)
+    .eq("user_id", currentVisitorUser.id)
+    .maybeSingle();
+  if (intentError) throw new Error(`意向单读取失败: ${intentError.message}`);
+  if (!intentData) throw new Error("这条记录不存在或无权限修改。");
+
+  const latestSnapshotPromise = supabase
+    .from("intent_snapshots")
+    .select("*")
+    .eq("intent_id", input.intentId)
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const { data: latestSnapshot, error: latestSnapshotError } = await latestSnapshotPromise;
+  if (latestSnapshotError) throw new Error(`意向快照读取失败: ${latestSnapshotError.message}`);
+
+  const allowPlaceholderContact =
+    intentData.source_type === "crowdfunding" &&
+    normalizeIntentSnapshotKind((latestSnapshot?.ui_context as { intentKind?: unknown } | null)?.intentKind) !== null;
+  const normalizedContact =
+    input.contactPhoneOrWechat === undefined
+      ? undefined
+      : resolveIntentContactValue({
+          contactPhoneOrWechat: input.contactPhoneOrWechat,
+          allowPlaceholder: allowPlaceholderContact
+        });
+  const normalizedPreference =
+    input.contactPreference === undefined ? undefined : input.contactPreference.trim() || null;
+  const shouldUpdateIntentOrder =
+    normalizedContact !== undefined ||
+    normalizedPreference !== undefined ||
+    typeof input.preferPriorityContact === "boolean";
+
+  if (shouldUpdateIntentOrder) {
+    const { error: updateIntentError } = await supabase
+      .from("intent_orders")
+      .update({
+        contact_phone_or_wechat:
+          normalizedContact === undefined ? intentData.contact_phone_or_wechat : normalizedContact,
+        contact_preference:
+          normalizedPreference === undefined ? intentData.contact_preference : normalizedPreference,
+        prefer_priority_contact:
+          typeof input.preferPriorityContact === "boolean"
+            ? input.preferPriorityContact
+            : intentData.prefer_priority_contact
+      })
+      .eq("id", input.intentId)
+      .eq("user_id", currentVisitorUser.id);
+    if (updateIntentError) throw new Error(`意向单更新失败: ${updateIntentError.message}`);
+  }
+
+  if (input.snapshot) {
+    const mergedUiContext = {
+      ...((latestSnapshot?.ui_context as Record<string, unknown> | null) ?? {}),
+      ...(input.snapshot.uiContext ?? {}),
+      ...(normalizeIntentSnapshotKind(input.snapshot.intentKind)
+        ? { intentKind: input.snapshot.intentKind }
+        : {})
+    };
+
+    const { error: snapshotError } = await supabase.from("intent_snapshots").insert({
+      intent_id: input.intentId,
+      project_title: latestSnapshot?.project_title ?? null,
+      result_summary: latestSnapshot?.result_summary ?? null,
+      selected_quantity: latestSnapshot?.selected_quantity ?? null,
+      package_level: latestSnapshot?.package_level ?? null,
+      design_service_level: latestSnapshot?.design_service_level ?? null,
+      sale_mode:
+        input.snapshot.saleMode === undefined ? latestSnapshot?.sale_mode ?? null : input.snapshot.saleMode || null,
+      crowdfunding_target_people:
+        input.snapshot.crowdfundingTargetPeople === undefined
+          ? latestSnapshot?.crowdfunding_target_people ?? null
+          : input.snapshot.crowdfundingTargetPeople,
+      estimated_unit_price_min: latestSnapshot?.estimated_unit_price_min ?? null,
+      estimated_unit_price_max: latestSnapshot?.estimated_unit_price_max ?? null,
+      estimated_total_price_min: latestSnapshot?.estimated_total_price_min ?? null,
+      estimated_total_price_max: latestSnapshot?.estimated_total_price_max ?? null,
+      discount_amount: latestSnapshot?.discount_amount ?? 0,
+      pricing_meta: latestSnapshot?.pricing_meta ?? {},
+      ui_context: mergedUiContext
+    });
+    if (snapshotError) throw new Error(`意向快照更新失败: ${snapshotError.message}`);
+  }
+
+  const followupSegments: string[] = [];
+  if (normalizedContact !== undefined) {
+    followupSegments.push(normalizedContact ? "补充了联系方式" : "清空了联系方式");
+  }
+  if (normalizedPreference !== undefined) {
+    followupSegments.push(normalizedPreference ? "补充了联系偏好" : "清空了联系偏好");
+  }
+  if (typeof input.preferPriorityContact === "boolean") {
+    followupSegments.push(input.preferPriorityContact ? "希望优先沟通" : "取消优先沟通");
+  }
+  if (input.snapshot?.crowdfundingTargetPeople !== undefined) {
+    followupSegments.push(`更新了目标人数为 ${input.snapshot.crowdfundingTargetPeople} 人`);
+  }
+
+  if (followupSegments.length > 0) {
+    const { error: followupError } = await supabase.from("intent_followups").insert({
+      intent_id: input.intentId,
+      action_type: "user_updated",
+      from_status: intentData.status,
+      to_status: intentData.status,
+      content: followupSegments.join("；"),
+      actor_id: currentVisitorUser.id
+    });
+    if (followupError) throw new Error(`意向跟进记录写入失败: ${followupError.message}`);
+  }
+
+  return { id: input.intentId };
 }
 
 export async function listIntentsForCurrentVisitor(input?: { limit?: number; offset?: number; status?: string }) {
@@ -1618,7 +1782,7 @@ export async function listIntentsForCurrentVisitor(input?: { limit?: number; off
     ] = await Promise.all([
       supabase
         .from("intent_snapshots")
-        .select("intent_id,project_title,estimated_total_price_min,estimated_total_price_max,created_at")
+        .select("intent_id,project_title,estimated_total_price_min,estimated_total_price_max,crowdfunding_target_people,ui_context,created_at")
         .in("intent_id", ids)
         .order("created_at", { ascending: false }),
       supabase

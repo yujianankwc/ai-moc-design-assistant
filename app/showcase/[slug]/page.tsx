@@ -200,8 +200,16 @@ function renderStage(stepStage: ShowcaseStage) {
   );
 }
 
-export default async function ShowcaseDetailPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function ShowcaseDetailPage({
+  params,
+  searchParams
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const { slug } = await params;
+  const resolvedSearch = (await searchParams) || {};
+  const autoBuyRaw = Array.isArray(resolvedSearch.autobuy) ? resolvedSearch.autobuy[0] : resolvedSearch.autobuy;
   const detail = await getDetailModel(slug);
   const interactionSummary = await getShowcaseInteractionSummary(slug).catch(() => ({
     likes: 0,
@@ -228,6 +236,14 @@ export default async function ShowcaseDetailPage({ params }: { params: Promise<{
   const related = isStatic ? detail.related : detail.related;
   const sourceLabel = isStatic ? project.popularityHint : detail.publicSourceLabel;
   const imageUrl = isStatic ? null : detail.imageUrl;
+  const autoBuy = autoBuyRaw === "1" && !isStatic;
+  const buyIntentPayload = isStatic
+    ? null
+    : {
+        projectId: detail.id,
+        projectTitle: detail.title,
+        resultSummary: detail.judgement
+      };
 
   return (
     <section className="space-y-6">
@@ -269,6 +285,8 @@ export default async function ShowcaseDetailPage({ params }: { params: Promise<{
           initialLiked={interactionSummary.liked}
           initialWatching={interactionSummary.watching}
           quickTryHref={quickTryHref}
+          autoBuy={autoBuy}
+          buyIntentPayload={buyIntentPayload}
         />
 
         {renderStage(project.stage)}
@@ -304,16 +322,16 @@ export default async function ShowcaseDetailPage({ params }: { params: Promise<{
 
         <aside className="space-y-4">
           <section className="page-section border-amber-100 bg-amber-50">
-            <h2 className="section-title">如果你也想玩这个方向</h2>
+            <h2 className="section-title">如果你也想参与这个方向</h2>
             <p className="mt-2 text-sm leading-6 text-slate-700">
-              当前更适合：{project.nextSuggestion}。如果你也想做类似方向，先试一个自己的版本会更快。
+              先给它投票，或者自己也试一个类似方向。觉得它真有机会量产，再补一条想买记录也不晚。
             </p>
             <div className="mt-4 flex flex-col gap-3">
               <Link
                 href={quickTryHref}
                 className="primary-cta"
               >
-                先试一个类似方向
+                我也想试一个
               </Link>
               <Link
                 href="/showcase"
@@ -361,7 +379,7 @@ export default async function ShowcaseDetailPage({ params }: { params: Promise<{
                   <p className="text-xs font-bold text-slate-800">{item.judgement}</p>
                   <p className="text-xs leading-6 text-slate-500">{item.highlight}</p>
                   <Link href={`/showcase/${item.slug}`} className="inline-flex text-sm font-bold text-amber-700 hover:text-amber-900">
-                    我也看看这个方向
+                    去给这条投票
                   </Link>
                 </div>
               </article>

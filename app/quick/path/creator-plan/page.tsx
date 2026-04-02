@@ -1,51 +1,63 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { buildQuickPathHref, buildQuickResultHref, readQuickPathContext } from "@/lib/quick-path-context";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
+import { buildQuickResultHref, readQuickPathContext } from "@/lib/quick-path-context";
 import QuickSuccessCard from "@/components/quick-success-card";
 
-type CreatorMode = "group_buy" | "crowdfunding";
 type TargetPeople = 10 | 30 | 50 | 100;
 
 const targetOptions: TargetPeople[] = [10, 30, 50, 100];
 
-export default function QuickCreatorPlanPage() {
-  const [rawSearch, setRawSearch] = useState("");
-  useEffect(() => {
-    setRawSearch(window.location.search);
-  }, []);
-  const context = useMemo(() => readQuickPathContext(rawSearch), [rawSearch]);
-  const modeFromQuery = useMemo(() => {
-    const value = new URLSearchParams(rawSearch).get("mode");
-    return value === "crowdfunding" ? "crowdfunding" : "group_buy";
-  }, [rawSearch]);
+function buildAutoPublishStorageKey(token: string) {
+  return `quick_creator_plan_autostart:${token}`;
+}
 
-  const [mode, setMode] = useState<CreatorMode>("group_buy");
-  const [targetPeople, setTargetPeople] = useState<TargetPeople>(30);
+export default function QuickCreatorPlanPage() {
+  const pathname = usePathname();
+  const [rawSearch, setRawSearch] = useState("");
   const [submittedIntentId, setSubmittedIntentId] = useState("");
   const [isLaunching, setIsLaunching] = useState(false);
+  const [isSavingSupplement, setIsSavingSupplement] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [contact, setContact] = useState("");
   const [contactHint, setContactHint] = useState("");
   const [priority, setPriority] = useState(false);
+  const [targetPeople, setTargetPeople] = useState<TargetPeople>(30);
+  const autoTriggeredRef = useRef(false);
 
   useEffect(() => {
-    setMode(modeFromQuery);
-  }, [modeFromQuery]);
+    setRawSearch(window.location.search);
+  }, []);
+
+  const context = useMemo(() => readQuickPathContext(rawSearch), [rawSearch]);
+  const searchParams = useMemo(() => new URLSearchParams(rawSearch), [rawSearch]);
+  const shouldAutoLaunch = searchParams.get("autostart") === "1";
+  const launchToken = searchParams.get("launchToken")?.trim() || context.projectId || context.idea || "default";
 
   const unlockText = useMemo(() => {
-    if (targetPeople >= 100) return "更优单价 / 更高包装";
-    if (targetPeople >= 50) return "升级标准礼盒";
-    if (targetPeople >= 30) return "免基础设计费";
-    return "减免部分设计费";
+    if (targetPeople >= 100) return "更容易进入量产优先观察";
+    if (targetPeople >= 50) return "更适合继续推动样品和包装";
+    if (targetPeople >= 30) return "更容易判断大家是否愿意继续支持";
+    return "先试试看会不会有人愿意支持";
   }, [targetPeople]);
 
-  const handleLaunchSubmit = async () => {
-    if (!contact.trim()) {
-      setFeedback("请填写手机号或微信。");
-      return;
-    }
+  const clearAutostartQuery = () => {
+    if (typeof window === "undefined") return;
+    const nextSearch = new URLSearchParams(window.location.search);
+    nextSearch.delete("autostart");
+    nextSearch.delete("launchToken");
+    const nextUrl = nextSearch.toString() ? `${pathname}?${nextSearch.toString()}` : pathname;
+    window.history.replaceState({}, "", nextUrl);
+  };
+
+  const handleLaunchSubmit = async (input?: {
+    contactPhoneOrWechat?: string;
+    contactPreference?: string;
+    preferPriorityContact?: boolean;
+    crowdfundingTargetPeople?: number;
+  }) => {
     setIsLaunching(true);
     setFeedback("");
     try {
@@ -55,159 +67,213 @@ export default function QuickCreatorPlanPage() {
         body: JSON.stringify({
           projectId: context.projectId?.trim() || undefined,
           sourceType: "crowdfunding",
-          contactPhoneOrWechat: contact.trim(),
-          contactPreference: contactHint.trim(),
-          preferPriorityContact: priority,
+          contactPhoneOrWechat: input?.contactPhoneOrWechat?.trim() || "",
+          contactPreference: input?.contactPreference?.trim() || "",
+          preferPriorityContact: Boolean(input?.preferPriorityContact),
           snapshot: {
             projectTitle: context.idea || "轻量创意项目",
             resultSummary: context.quickJudgement || "",
-            saleMode: mode,
-            crowdfundingTargetPeople: targetPeople,
+            saleMode: "public_launch",
+            crowdfundingTargetPeople: input?.crowdfundingTargetPeople ?? targetPeople,
+            intentKind: "quick_publish",
             uiContext: {
               quickPath: "creator_plan",
               direction: context.direction,
               style: context.style,
-              scale: context.scale
+              scale: context.scale,
+              publishedFrom: "quick_result"
             }
           }
         })
       });
       const data = (await response.json().catch(() => null)) as { intentId?: string; error?: string } | null;
-      if (!response.ok) throw new Error(data?.error || "这条公开展示路径暂时没有记下来，请稍后重试。");
+      if (!response.ok) throw new Error(data?.error || "这条公开内容暂时没有发出来，请稍后重试。");
       setSubmittedIntentId(data?.intentId || "");
-      setFeedback("这条公开展示路径已经记下来了。");
+      setFeedback("这条方向已经发出来了。");
+      clearAutostartQuery();
     } catch (error) {
-      const message = error instanceof Error ? error.message : "这条公开展示路径暂时没有记下来，请稍后重试。";
+      const message = error instanceof Error ? error.message : "这条公开内容暂时没有发出来，请稍后重试。";
       setFeedback(message);
     } finally {
       setIsLaunching(false);
     }
   };
 
-  if (submittedIntentId) {
-    return (
-      <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
-        <QuickSuccessCard
-          mode="compact"
-          title="这条方向已经发布出来了"
-          summary={mode === "group_buy" ? "现在先看看会不会有人愿意一起关注这条方向。" : "现在先看看会不会有人想继续看这条方向。"}
-          stageLabel="公开展示中"
-          nextSuggestion="继续分享出来看看"
-          footerHint="这一步用于先收集关注和反馈，不等于已经进入真实众筹或预售。"
-          items={[
-            { label: "目标人数", value: `${targetPeople} 人` },
-            { label: "达标奖励", value: unlockText }
-          ]}
-          actions={
-            <>
-              <Link
-                href={submittedIntentId ? `/intents/${submittedIntentId}` : "/projects"}
-                className="rounded-md bg-emerald-700 px-4 py-2 text-sm font-medium text-white hover:bg-emerald-600"
-              >
-                去我的看看
-              </Link>
-              <Link
-                href={buildQuickResultHref(context)}
-                className="rounded-md border border-emerald-300 bg-white px-4 py-2 text-sm text-emerald-800 hover:bg-emerald-100"
-              >
-                回到刚才结果
-              </Link>
-            </>
+  const handleSupplementSave = async () => {
+    if (!submittedIntentId) return;
+    setIsSavingSupplement(true);
+    setFeedback("");
+    try {
+      const response = await fetch(`/api/intents/${submittedIntentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contactPhoneOrWechat: contact,
+          contactPreference: contactHint,
+          preferPriorityContact: priority,
+          snapshot: {
+            intentKind: "quick_publish",
+            saleMode: "public_launch",
+            crowdfundingTargetPeople: targetPeople,
+            uiContext: {
+              quickPath: "creator_plan",
+              publishedFrom: "quick_result"
+            }
           }
-        />
+        })
+      });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) throw new Error(data?.error || "补充信息暂时没有保存成功，请稍后重试。");
+      setFeedback("补充信息已经保存好了。");
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "补充信息暂时没有保存成功，请稍后重试。";
+      setFeedback(message);
+    } finally {
+      setIsSavingSupplement(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!shouldAutoLaunch || autoTriggeredRef.current || submittedIntentId || isLaunching) return;
+    const storageKey = buildAutoPublishStorageKey(launchToken);
+    if (typeof window !== "undefined" && window.sessionStorage.getItem(storageKey)) {
+      autoTriggeredRef.current = true;
+      clearAutostartQuery();
+      return;
+    }
+    autoTriggeredRef.current = true;
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(storageKey, "1");
+    }
+    void handleLaunchSubmit();
+  }, [isLaunching, launchToken, shouldAutoLaunch, submittedIntentId]);
+
+  if (!submittedIntentId) {
+    return (
+      <section className="mx-auto max-w-3xl space-y-4 sm:space-y-5">
+        <section className="rounded-[28px] border-2 border-amber-100 bg-white p-6 shadow-[0_10px_30px_-18px_rgba(217,119,6,0.35)] sm:p-8">
+          <p className="inline-flex rounded-full border-2 border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
+            第 2 步 · 发出来看看
+          </p>
+          <h1 className="mt-4 text-2xl font-black text-slate-900 sm:text-3xl">正在帮你把这条方向发出来</h1>
+          <p className="mt-3 text-sm leading-7 text-slate-600">
+            先把内容发出来，后面再补联系方式和目标人数也来得及。
+          </p>
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-4 text-sm text-amber-900">
+            {isLaunching ? "正在发布中，请稍候..." : feedback || "准备开始发布。"}
+          </div>
+          {!shouldAutoLaunch && (
+            <button
+              type="button"
+              onClick={() => void handleLaunchSubmit()}
+              disabled={isLaunching}
+              className="primary-cta mt-6 w-full disabled:pointer-events-none disabled:opacity-60"
+            >
+              {isLaunching ? "正在发布..." : "发布出来看看"}
+            </button>
+          )}
+          <Link
+            href={buildQuickResultHref(context)}
+            className="mt-4 inline-flex text-sm font-semibold text-slate-500 hover:text-slate-900"
+          >
+            先回刚才结果
+          </Link>
+        </section>
       </section>
     );
   }
 
   return (
     <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h1 className="text-lg font-semibold text-slate-900">第 3 步 · 发布出来看看</h1>
-        <p className="mt-2 text-sm text-slate-700">适合你想先让大家看看这个方向，再决定要不要继续放大。</p>
-      </section>
-
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">你希望大家怎么参与？</h2>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <button
-            type="button"
-            onClick={() => setMode("group_buy")}
-            className={
-              mode === "group_buy"
-                ? "rounded-lg border border-blue-300 bg-blue-50 p-3 text-left text-sm text-slate-900"
-                : "rounded-lg border border-slate-200 bg-white p-3 text-left text-sm text-slate-700 hover:bg-slate-50"
-            }
-          >
-            一起关注这个方向
-          </button>
-          <button
-            type="button"
-            onClick={() => setMode("crowdfunding")}
-            className={
-              mode === "crowdfunding"
-                ? "rounded-lg border border-blue-300 bg-blue-50 p-3 text-left text-sm text-slate-900"
-                : "rounded-lg border border-slate-200 bg-white p-3 text-left text-sm text-slate-700 hover:bg-slate-50"
-            }
-          >
-            先看大家投票和反馈
-          </button>
-        </div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          {targetOptions.map((value) => (
-            <button
-              key={value}
-              type="button"
-              onClick={() => setTargetPeople(value)}
-              className={
-                targetPeople === value
-                  ? "rounded-full border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs text-blue-800"
-                  : "rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-              }
+      <QuickSuccessCard
+        mode="compact"
+        title="这条方向已经发出来了"
+        summary="现在先让大家看到它、给它投票，再慢慢决定要不要继续量产。"
+        stageLabel="公开展示中"
+        nextSuggestion="先去看看大家会不会支持它"
+        footerHint="这一步是先发出来收集反馈，不用一开始就把资料全部填完。"
+        items={[
+          { label: "当前目标", value: `${targetPeople} 人` },
+          { label: "现在更适合", value: unlockText }
+        ]}
+        actions={
+          <>
+            <Link
+              href={context.projectId ? `/showcase/${context.projectId}` : "/showcase"}
+              className="rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-amber-950 hover:bg-amber-400"
             >
-              {value} 人
-            </button>
-          ))}
-        </div>
-        <p className="mt-2 text-xs text-slate-500">如果关注够多，后面更适合继续推进：{unlockText}</p>
-      </section>
+              去看公开页
+            </Link>
+            <Link
+              href="/projects?tab=published"
+              className="rounded-md border border-amber-300 bg-white px-4 py-2 text-sm text-amber-800 hover:bg-amber-100"
+            >
+              去我的发布
+            </Link>
+          </>
+        }
+      />
 
-      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
-        <h2 className="text-base font-semibold text-slate-900">联系方式</h2>
-        <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <input
-            value={contact}
-            onChange={(event) => setContact(event.target.value)}
-            placeholder="手机号或微信（必填）"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          />
-          <input
-            value={contactHint}
-            onChange={(event) => setContactHint(event.target.value)}
-            placeholder="怎么联系更方便（可选）"
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
-          />
+      <section className="rounded-[28px] border-2 border-slate-100 bg-white p-6 shadow-sm sm:p-8">
+        <h2 className="text-lg font-bold text-slate-900">再补一点信息会更顺</h2>
+        <p className="mt-2 text-sm text-slate-600">这些都不是发布门槛，现在补、以后补都可以。</p>
+        <div className="mt-5 grid gap-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <input
+              value={contact}
+              onChange={(event) => setContact(event.target.value)}
+              placeholder="手机号或微信（可选）"
+              className="w-full rounded-2xl border-2 border-slate-200 px-4 py-3 text-sm outline-none transition-all focus:border-amber-400 focus:ring-4 focus:ring-amber-400/20"
+            />
+            <input
+              value={contactHint}
+              onChange={(event) => setContactHint(event.target.value)}
+              placeholder="怎么联系更方便（可选）"
+              className="w-full rounded-2xl border-2 border-slate-200 px-4 py-3 text-sm outline-none transition-all focus:border-amber-400 focus:ring-4 focus:ring-amber-400/20"
+            />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-slate-800">你希望先冲到多少人支持？</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {targetOptions.map((value) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setTargetPeople(value)}
+                  className={
+                    targetPeople === value
+                      ? "rounded-full border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-800"
+                      : "rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
+                  }
+                >
+                  {value} 人
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-slate-500">{unlockText}</p>
+          </div>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <input type="checkbox" checked={priority} onChange={(event) => setPriority(event.target.checked)} />
+            如果有人来问，我希望优先被联系
+          </label>
         </div>
-        <label className="mt-2 flex items-center gap-2 text-xs text-slate-600">
-          <input type="checkbox" checked={priority} onChange={(event) => setPriority(event.target.checked)} />
-          希望优先沟通（可选）
-        </label>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
           <button
             type="button"
-            onClick={handleLaunchSubmit}
-            disabled={isLaunching}
-            className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800"
+            onClick={() => void handleSupplementSave()}
+            disabled={isSavingSupplement}
+            className="primary-cta disabled:pointer-events-none disabled:opacity-60"
           >
-            {isLaunching ? "正在记下这一步..." : "发布出来看看"}
+            {isSavingSupplement ? "正在保存..." : "保存这些补充信息"}
           </button>
           <Link
-            href={buildQuickPathHref("small_batch", context)}
-            className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
+            href={buildQuickResultHref(context)}
+            className="secondary-cta"
           >
-            还是先下单试做
+            回到刚才结果
           </Link>
         </div>
-        {feedback && <p className="mt-2 text-xs text-emerald-700">{feedback}</p>}
+        {feedback && <p className="mt-3 text-sm font-medium text-emerald-700">{feedback}</p>}
       </section>
     </section>
   );
