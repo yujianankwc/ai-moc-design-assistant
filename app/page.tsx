@@ -17,6 +17,8 @@ import {
 } from "@/services/project-service";
 import type { ProjectRow } from "@/types/project";
 
+export const dynamic = "force-dynamic";
+
 type LandingCardItem = {
   id: string;
   title: string;
