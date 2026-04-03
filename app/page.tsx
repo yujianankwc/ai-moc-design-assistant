@@ -12,7 +12,6 @@ import {
 import { mapProjectCategoryToShowcaseCategory } from "@/lib/showcase-category";
 import {
   getQuickProjectPreviewImageUrl,
-  isQuickProjectPubliclyVisible,
   listPublicShowcaseProjects
 } from "@/services/project-service";
 import type { ProjectRow } from "@/types/project";
@@ -41,8 +40,6 @@ type LandingCardItem = {
 function mapRealProjectToLandingCard(project: ProjectRow): LandingCardItem | null {
   if (project.linked_intent?.source_type !== "crowdfunding") return null;
   const showcaseControl = project.linked_intent.showcase_control;
-  if (showcaseControl?.paused) return null;
-  if (!isQuickProjectPubliclyVisible(project.notes_for_factory)) return null;
 
   const judgement = mapIntentSourceTypeToJudgement(project.linked_intent.source_type);
   const spotlightLabel = showcaseControl?.homepage
@@ -87,7 +84,7 @@ function mapRealProjectToLandingCard(project: ProjectRow): LandingCardItem | nul
 export default async function LandingPage() {
   let realProjects: ProjectRow[] = [];
   try {
-    realProjects = await listPublicShowcaseProjects();
+    realProjects = (await listPublicShowcaseProjects({ page: 1, pageSize: 4, sort: "latest" })).items;
   } catch {
     realProjects = [];
   }
@@ -117,9 +114,10 @@ export default async function LandingPage() {
 
   const featuredProjects =
     dynamicFeatured.length > 0
-      ? [...dynamicFeatured].sort((a, b) => b.featuredAtOrder - a.featuredAtOrder).slice(0, 2)
-      : staticFeatured.slice(0, 2);
+      ? [...dynamicFeatured].sort((a, b) => b.featuredAtOrder - a.featuredAtOrder).slice(0, 4)
+      : staticFeatured.slice(0, 4);
   const heroVisual = featuredProjects[0] || staticFeatured[0];
+  const followupProjects = featuredProjects.slice(1, 4);
 
   return (
     <section className="space-y-12">
@@ -177,48 +175,43 @@ export default async function LandingPage() {
             去看内容
           </Link>
         </div>
-        <div className="mt-10 grid gap-6 xl:grid-cols-12">
-          {featuredProjects.map((project, index) => (
-            <article
-              key={project.id}
-              className={`visual-card rounded-[32px] border border-slate-200/80 bg-white ${
-                index === 0 ? "xl:col-span-7" : "xl:col-span-5"
-              }`}
-            >
-              <div className={`brick-surface cover-frame bg-[#f7f5f0] ${index === 0 ? "xl:min-h-[21rem]" : ""}`}>
-                <ShowcaseVisual
-                  title={project.title}
-                  category={project.category}
-                  imageUrl={project.imageUrl}
-                  className={`${index === 0 ? "h-72 xl:h-[25rem]" : "h-64"} w-full`}
-                />
-                <div className="absolute left-4 top-4 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
-                  <span className="rounded-full border border-white/70 bg-white/90 px-3 py-1 text-[color:var(--brand-accent)] shadow-sm">
-                    {project.category}
-                  </span>
-                  <span className="rounded-full border border-white/25 bg-slate-950/70 px-3 py-1 text-white backdrop-blur">
-                    {project.stage}
-                  </span>
+        {followupProjects.length > 0 ? (
+          <div className="mt-10 grid gap-6 md:grid-cols-2 xl:grid-cols-3">
+            {followupProjects.map((project) => (
+              <article key={project.id} className="visual-card rounded-[28px] border border-slate-200/80 bg-white">
+                <div className="brick-surface cover-frame bg-[#f7f5f0]">
+                  <ShowcaseVisual
+                    title={project.title}
+                    category={project.category}
+                    imageUrl={project.imageUrl}
+                    className="h-64 w-full"
+                  />
+                  <div className="absolute left-4 top-4 flex flex-wrap items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.16em]">
+                    <span className="rounded-full border border-white/70 bg-white/90 px-3 py-1 text-[color:var(--brand-accent)] shadow-sm">
+                      {project.category}
+                    </span>
+                    <span className="rounded-full border border-white/25 bg-slate-950/70 px-3 py-1 text-white backdrop-blur">
+                      {project.stage}
+                    </span>
+                  </div>
                 </div>
-              </div>
-              <div className={`space-y-4 px-6 py-6 ${index === 0 ? "xl:px-8 xl:py-7" : ""}`}>
-                <h3
-                  className={`display-title font-semibold tracking-[-0.05em] text-slate-950 ${
-                    index === 0 ? "text-[2.4rem]" : "text-[2rem]"
-                  }`}
-                >
-                  {project.title}
-                </h3>
-                <p className="line-clamp-2 text-sm leading-7 text-slate-500">{project.judgement}</p>
-                <div className="flex items-center justify-between gap-4 pt-1">
-                  <Link href={project.href} className="inline-flex text-sm font-semibold text-slate-900 hover:text-slate-600">
-                    {project.actionLabel}
-                  </Link>
+                <div className="space-y-4 px-6 py-6">
+                  <h3 className="display-title text-[1.9rem] font-semibold tracking-[-0.05em] text-slate-950">{project.title}</h3>
+                  <p className="line-clamp-2 text-sm leading-7 text-slate-500">{project.judgement}</p>
+                  <div className="flex items-center justify-between gap-4 pt-1">
+                    <Link href={project.href} className="inline-flex text-sm font-semibold text-slate-900 hover:text-slate-600">
+                      {project.actionLabel}
+                    </Link>
+                  </div>
                 </div>
-              </div>
-            </article>
-          ))}
-        </div>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-10 rounded-[28px] border border-dashed border-slate-200 bg-white/80 px-6 py-8 text-center text-sm text-slate-500">
+            当前先展示这一条代表方向，后续公开内容会继续补到这里。
+          </div>
+        )}
       </section>
 
       <section className="page-section rounded-[32px] px-6 py-6 sm:px-8">

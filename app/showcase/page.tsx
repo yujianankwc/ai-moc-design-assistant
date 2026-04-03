@@ -13,14 +13,15 @@ import {
 import { mapProjectCategoryToShowcaseCategory, SHOWCASE_CATEGORY_FILTERS } from "@/lib/showcase-category";
 import {
   getQuickProjectPreviewImageUrl,
-  isQuickProjectPubliclyVisible,
-  listPublicShowcaseProjects
+  listPublicShowcaseProjects,
+  type PublicShowcaseSortKey
 } from "@/services/project-service";
 import type { ProjectRow } from "@/types/project";
 
 const categories: Array<ShowcaseCategory | "全部"> = SHOWCASE_CATEGORY_FILTERS;
+const SHOWCASE_PAGE_SIZE = 12;
 
-const sortOptions: Array<{ key: ShowcaseSortKey; label: string }> = [
+const sortOptions: Array<{ key: PublicShowcaseSortKey; label: string }> = [
   { key: "popular", label: "最受欢迎" },
   { key: "latest", label: "最新发布" }
 ];
@@ -36,20 +37,12 @@ type ShowcaseCardItem = {
   href: string;
   actionLabel: string;
   sourceLabel?: string;
-  featuredAtOrder: number;
-  sortWeight: { latest: number; popular: number; trial: number };
 };
 
 function mapRealProjectToShowcaseCard(item: ProjectRow): ShowcaseCardItem | null {
   if (item.linked_intent?.source_type !== "crowdfunding") return null;
-  const showcaseControl = item.linked_intent.showcase_control;
-  if (showcaseControl?.paused) return null;
-  if (!isQuickProjectPubliclyVisible(item.notes_for_factory)) return null;
   const category = mapProjectCategoryToShowcaseCategory(item.category);
   const judgement = mapIntentSourceTypeToJudgement(item.linked_intent.source_type);
-  const latestOrder = new Date(item.linked_intent.updated_at).getTime();
-  const featuredBoost = showcaseControl?.featured ? 40 : 0;
-  const homepageBoost = showcaseControl?.homepage ? 60 : 0;
   return {
     id: item.id,
     title: item.title || "未命名项目",
@@ -64,14 +57,48 @@ function mapRealProjectToShowcaseCard(item: ProjectRow): ShowcaseCardItem | null
     imageUrl: getQuickProjectPreviewImageUrl(item.notes_for_factory),
     href: `/showcase/${item.id}`,
     actionLabel: "去投票",
-    sourceLabel: "真实项目",
-    featuredAtOrder: latestOrder + homepageBoost + featuredBoost,
-    sortWeight: {
-      latest: 99 + homepageBoost + featuredBoost,
-      popular: 92 + homepageBoost + featuredBoost,
-      trial: 90 + featuredBoost + Math.floor(homepageBoost / 2)
-    }
+    sourceLabel: "真实项目"
   };
+}
+
+function buildShowcaseHref(input: {
+  category?: ShowcaseCategory | "全部";
+  sort?: PublicShowcaseSortKey;
+  focus?: string;
+  page?: number;
+}) {
+  const params = new URLSearchParams();
+  if (input.category && input.category !== "全部") params.set("category", input.category);
+  if (input.sort && input.sort !== "popular") params.set("sort", input.sort);
+  if (input.focus === "live") params.set("focus", "live");
+  if (input.page && input.page > 1) params.set("page", String(input.page));
+  const query = params.toString();
+  return `/showcase${query ? `?${query}` : ""}`;
+}
+
+function getMasonryVisualHeightClass(index: number) {
+  const cycle = [
+    "h-72 sm:h-80",
+    "h-[22rem] sm:h-[26rem]",
+    "h-80 sm:h-[23rem]",
+    "h-[19rem] sm:h-[21rem]",
+    "h-[24rem] sm:h-[28rem]",
+    "h-72 sm:h-[22rem]"
+  ];
+  return cycle[index % cycle.length];
+}
+
+function getVisiblePages(currentPage: number, totalPages: number) {
+  if (totalPages <= 5) {
+    return Array.from({ length: totalPages }, (_, index) => index + 1);
+  }
+  if (currentPage <= 3) {
+    return [1, 2, 3, 4, 5];
+  }
+  if (currentPage >= totalPages - 2) {
+    return [totalPages - 4, totalPages - 3, totalPages - 2, totalPages - 1, totalPages];
+  }
+  return [currentPage - 2, currentPage - 1, currentPage, currentPage + 1, currentPage + 2];
 }
 
 export default async function ShowcasePage({
@@ -83,20 +110,44 @@ export default async function ShowcasePage({
   const categoryRaw = Array.isArray(resolvedSearch.category) ? resolvedSearch.category[0] : resolvedSearch.category;
   const sortRaw = Array.isArray(resolvedSearch.sort) ? resolvedSearch.sort[0] : resolvedSearch.sort;
   const focusRaw = Array.isArray(resolvedSearch.focus) ? resolvedSearch.focus[0] : resolvedSearch.focus;
+  const pageRaw = Array.isArray(resolvedSearch.page) ? resolvedSearch.page[0] : resolvedSearch.page;
   const selectedCategory = categories.includes((categoryRaw || "") as ShowcaseCategory | "全部")
     ? ((categoryRaw as ShowcaseCategory | "全部") || "全部")
     : "全部";
-  const sort = sortOptions.some((item) => item.key === sortRaw) ? (sortRaw as ShowcaseSortKey) : "popular";
+  const sort = sortOptions.some((item) => item.key === sortRaw) ? (sortRaw as PublicShowcaseSortKey) : "popular";
   const isLiveFocus = focusRaw === "live";
+  const requestedPage = Number.isFinite(Number(pageRaw)) ? Math.max(1, Number(pageRaw)) : 1;
 
   let realProjects: ProjectRow[] = [];
+  let realTotal = 0;
+  let realTotalPages = 0;
+  let realPage = requestedPage;
   try {
-    realProjects = await listPublicShowcaseProjects();
+    const realResult = await listPublicShowcaseProjects({
+      page: requestedPage,
+      pageSize: SHOWCASE_PAGE_SIZE,
+      category: selectedCategory === "全部" ? null : selectedCategory,
+      sort
+    });
+    realProjects = realResult.items;
+    realTotal = realResult.total;
+    realTotalPages = realResult.totalPages;
+    realPage = realResult.page;
   } catch {
     realProjects = [];
+    realTotal = 0;
+    realTotalPages = 0;
+    realPage = requestedPage;
   }
 
-  const staticItems: ShowcaseCardItem[] = getShowcaseProjectsBySort(sort).map((item) => ({
+  const staticItems = getShowcaseProjectsBySort(sort as ShowcaseSortKey)
+    .filter((item) => (selectedCategory === "全部" ? true : item.category === selectedCategory));
+  const staticTotal = staticItems.length;
+  const staticTotalPages = staticTotal === 0 ? 0 : Math.ceil(staticTotal / SHOWCASE_PAGE_SIZE);
+  const staticPage = staticTotalPages === 0 ? 1 : Math.min(requestedPage, staticTotalPages);
+  const staticPageItems: ShowcaseCardItem[] = staticItems
+    .slice((staticPage - 1) * SHOWCASE_PAGE_SIZE, staticPage * SHOWCASE_PAGE_SIZE)
+    .map((item) => ({
     id: item.slug,
     title: item.title,
     category: item.category,
@@ -106,20 +157,15 @@ export default async function ShowcasePage({
     imageUrl: null,
     href: `/showcase/${item.slug}`,
     actionLabel: "去投票",
-    featuredAtOrder: 0,
-    sortWeight: item.sortWeight
+    sourceLabel: undefined
   }));
 
   const dynamicItems = realProjects.map(mapRealProjectToShowcaseCard).filter(Boolean) as ShowcaseCardItem[];
-  const sortedDynamicItems = [...dynamicItems].sort((a, b) => b.featuredAtOrder - a.featuredAtOrder);
-  const baseItems = isLiveFocus
-    ? sortedDynamicItems
-    : dynamicItems.length > 0
-      ? sortedDynamicItems
-      : staticItems;
-  const items = baseItems
-    .filter((item) => (selectedCategory === "全部" ? true : item.category === selectedCategory))
-    .sort((a, b) => b.sortWeight[sort] - a.sortWeight[sort]);
+  const useDynamicItems = isLiveFocus || realTotal > 0;
+  const items = useDynamicItems ? dynamicItems : staticPageItems;
+  const totalPages = useDynamicItems ? realTotalPages : staticTotalPages;
+  const currentPage = useDynamicItems ? realPage : staticPage;
+  const visiblePages = totalPages > 1 ? getVisiblePages(currentPage, totalPages) : [];
 
   return (
     <section className="space-y-6">
@@ -134,7 +180,12 @@ export default async function ShowcasePage({
             {categories.map((category) => (
               <Link
                 key={category}
-                href={`/showcase${category === "全部" ? "" : `?category=${encodeURIComponent(category)}&sort=${sort}`}`}
+                href={buildShowcaseHref({
+                  category,
+                  sort,
+                  focus: isLiveFocus ? "live" : "",
+                  page: 1
+                })}
                 className={`filter-chip ${selectedCategory === category ? "filter-chip-active" : ""}`}
               >
                 {category}
@@ -143,7 +194,12 @@ export default async function ShowcasePage({
           </div>
           <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 lg:mx-0 lg:flex-wrap lg:overflow-visible lg:px-0">
             <Link
-              href="/showcase?focus=live&sort=latest"
+              href={buildShowcaseHref({
+                category: selectedCategory,
+                sort: "latest",
+                focus: "live",
+                page: 1
+              })}
               className={`filter-chip ${isLiveFocus ? "filter-chip-active" : ""}`}
             >
               最近公开展示
@@ -151,10 +207,12 @@ export default async function ShowcasePage({
             {sortOptions.map((option) => (
               <Link
                 key={option.key}
-                href={`/showcase?${new URLSearchParams({
-                  ...(selectedCategory === "全部" ? {} : { category: selectedCategory }),
-                  sort: option.key
-                }).toString()}`}
+                href={buildShowcaseHref({
+                  category: selectedCategory,
+                  sort: option.key,
+                  focus: isLiveFocus ? "live" : "",
+                  page: 1
+                })}
                 className={`filter-chip ${sort === option.key ? "filter-chip-dark" : ""}`}
               >
                 {option.label}
@@ -164,55 +222,97 @@ export default async function ShowcasePage({
         </div>
       </section>
 
-      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {items.map((item, index) => (
-          <article
-            key={item.id}
-            className={`visual-card flex h-full flex-col ${index === 0 ? "md:col-span-2 xl:col-span-2" : ""}`}
-          >
-            <div className={`cover-frame p-4 ${index === 0 ? "h-64 sm:h-80" : "h-52 sm:h-60"}`}>
-              <ShowcaseVisual
-                title={item.title}
-                category={item.category}
-                imageUrl={item.imageUrl}
-                className="absolute inset-0"
-              />
-              <div className="relative z-10 flex items-start justify-between gap-3">
-                <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-slate-700">{item.category}</span>
-                {index === 0 ? (
-                  <span className="rounded-full bg-slate-950/78 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white">
-                    先看这个
-                  </span>
-                ) : null}
+      {items.length === 0 ? (
+        <section className="page-section border-dashed border-slate-300 text-center">
+          <h2 className="section-title">当前这组筛选下还没有公开内容</h2>
+          <p className="section-copy mt-2">可以换个分类看看，或者先去试一个自己的创意。</p>
+        </section>
+      ) : (
+        <div className="columns-1 [column-gap:1.25rem] md:columns-2 xl:columns-3 2xl:columns-4">
+          {items.map((item, index) => (
+            <article key={item.id} className="visual-card mb-5 inline-block w-full [break-inside:avoid] align-top">
+              <div className={`cover-frame p-4 ${getMasonryVisualHeightClass(index)}`}>
+                <ShowcaseVisual
+                  title={item.title}
+                  category={item.category}
+                  imageUrl={item.imageUrl}
+                  className="absolute inset-0"
+                />
+                <div className="relative z-10 flex items-start justify-between gap-3">
+                  <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-slate-700">{item.category}</span>
+                  {item.sourceLabel ? (
+                    <span className="rounded-full bg-slate-950/78 px-3 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-white">
+                      {item.sourceLabel}
+                    </span>
+                  ) : null}
+                </div>
+                <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-slate-950/82 via-slate-950/38 to-transparent px-4 pb-4 pt-16 sm:px-5 sm:pb-5">
+                  <h2 className="max-w-[88%] line-clamp-2 text-[1.7rem] font-black leading-[0.95] tracking-[-0.05em] text-white sm:text-[1.95rem]">
+                    {item.title}
+                  </h2>
+                  <p className="mt-2 max-w-[86%] line-clamp-1 text-sm font-semibold text-white/90">{item.judgement}</p>
+                </div>
               </div>
-              <div className="absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-slate-950/78 via-slate-950/34 to-transparent px-4 pb-4 pt-14 sm:px-5 sm:pb-5">
-                <h2
-                  className={`max-w-[86%] line-clamp-2 font-black tracking-[-0.05em] text-white ${
-                    index === 0 ? "text-[1.95rem] leading-[0.92] sm:text-[2.35rem]" : "text-[1.45rem] leading-[0.95] sm:text-[1.65rem]"
-                  }`}
-                >
-                  {item.title}
-                </h2>
-                <p className={`max-w-[78%] line-clamp-1 font-semibold text-white/90 ${index === 0 ? "mt-2 text-sm leading-6 sm:text-[0.95rem]" : "mt-2 text-xs leading-5 sm:text-sm"}`}>
-                  {item.judgement}
-                </p>
-              </div>
-            </div>
-            <div className={`flex flex-1 flex-col p-6 ${index === 0 ? "pt-6 sm:px-7 sm:pb-7" : "pt-5"}`}>
-              <div className="mt-auto border-t border-slate-100/80 pt-4">
+              <div className="space-y-4 px-5 py-5 sm:px-6">
+                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
+                  <span>{item.stage}</span>
+                </div>
                 <Link
                   href={item.href}
-                  className={`inline-flex w-full items-center justify-center rounded-full bg-slate-950 px-4 font-bold text-white transition hover:bg-slate-800 ${
-                    index === 0 ? "py-3.5 text-base" : "py-3 text-sm"
-                  }`}
+                  className="inline-flex w-full cursor-pointer items-center justify-center rounded-full bg-slate-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-slate-800"
                 >
                   {item.actionLabel}
                 </Link>
               </div>
-            </div>
-          </article>
-        ))}
-      </div>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {totalPages > 1 ? (
+        <section className="page-section p-4 sm:p-5">
+          <div className="flex flex-wrap items-center justify-center gap-2">
+            <Link
+              href={buildShowcaseHref({
+                category: selectedCategory,
+                sort,
+                focus: isLiveFocus ? "live" : "",
+                page: Math.max(1, currentPage - 1)
+              })}
+              aria-disabled={currentPage <= 1}
+              className={`filter-chip ${currentPage <= 1 ? "pointer-events-none opacity-40" : ""}`}
+            >
+              上一页
+            </Link>
+            {visiblePages.map((page) => (
+              <Link
+                key={page}
+                href={buildShowcaseHref({
+                  category: selectedCategory,
+                  sort,
+                  focus: isLiveFocus ? "live" : "",
+                  page
+                })}
+                className={`filter-chip ${page === currentPage ? "filter-chip-dark" : ""}`}
+              >
+                {page}
+              </Link>
+            ))}
+            <Link
+              href={buildShowcaseHref({
+                category: selectedCategory,
+                sort,
+                focus: isLiveFocus ? "live" : "",
+                page: Math.min(totalPages, currentPage + 1)
+              })}
+              aria-disabled={currentPage >= totalPages}
+              className={`filter-chip ${currentPage >= totalPages ? "pointer-events-none opacity-40" : ""}`}
+            >
+              下一页
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       <section className="page-section text-center">
         <h2 className="section-title">你也可以先发一个自己的方向</h2>

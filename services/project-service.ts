@@ -6,6 +6,7 @@ import {
   isQuickProjectPubliclyVisible as isQuickProjectPubliclyVisibleByMeta,
   reviewQuickProjectForPublicPublish
 } from "@/lib/content-moderation";
+import { mapProjectCategoryToShowcaseCategory } from "@/lib/showcase-category";
 import { evaluateProductionScoreByRules } from "@/lib/production-score-rules";
 import {
   formatShowcaseDisplayControl,
@@ -981,7 +982,36 @@ export async function listProjectsByDemoUser() {
   return listProjectsForCurrentVisitor();
 }
 
-export async function listPublicShowcaseProjects() {
+export type PublicShowcaseSortKey = "latest" | "popular" | "trial";
+
+export type PublicShowcaseProjectListResult = {
+  items: ProjectRow[];
+  total: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+};
+
+function getPublicShowcaseProjectRank(project: ProjectRow, sort: PublicShowcaseSortKey) {
+  const showcaseControl = project.linked_intent?.showcase_control;
+  const latestOrder = new Date(project.linked_intent?.updated_at || project.updated_at).getTime();
+  const featuredBoost = showcaseControl?.featured ? 40 : 0;
+  const homepageBoost = showcaseControl?.homepage ? 60 : 0;
+  const primary =
+    sort === "popular"
+      ? 92 + homepageBoost + featuredBoost
+      : sort === "trial"
+        ? 90 + featuredBoost + Math.floor(homepageBoost / 2)
+        : 99 + homepageBoost + featuredBoost;
+  return { primary, latestOrder };
+}
+
+export async function listPublicShowcaseProjects(input?: {
+  page?: number;
+  pageSize?: number;
+  category?: string | null;
+  sort?: PublicShowcaseSortKey | null;
+}) {
   const supabase = getSupabaseServerClient();
   const { data: intentRows, error: intentError } = await supabase
     .from("intent_orders")
@@ -1012,10 +1042,40 @@ export async function listPublicShowcaseProjects() {
     sourceType: "crowdfunding"
   });
 
-  return projectRows.map((item) => ({
-    ...item,
-    linked_intent: intentMap[item.id] || null
-  }));
+  const sort = input?.sort || "latest";
+  const pageSize = Math.max(1, Math.min(input?.pageSize || 12, 48));
+  const requestedPage = Math.max(1, input?.page || 1);
+  const filtered = projectRows
+    .map((item) => ({
+      ...item,
+      linked_intent: intentMap[item.id] || null
+    }))
+    .filter((item) => item.linked_intent?.source_type === "crowdfunding")
+    .filter((item) => !item.linked_intent?.showcase_control?.paused)
+    .filter((item) => isQuickProjectPubliclyVisible(item.notes_for_factory))
+    .filter((item) =>
+      input?.category?.trim() ? mapProjectCategoryToShowcaseCategory(item.category) === input.category.trim() : true
+    )
+    .sort((a, b) => {
+      const rankA = getPublicShowcaseProjectRank(a, sort);
+      const rankB = getPublicShowcaseProjectRank(b, sort);
+      const primaryDiff = rankB.primary - rankA.primary;
+      if (primaryDiff !== 0) return primaryDiff;
+      return rankB.latestOrder - rankA.latestOrder;
+    });
+
+  const total = filtered.length;
+  const totalPages = total === 0 ? 0 : Math.ceil(total / pageSize);
+  const page = totalPages === 0 ? 1 : Math.min(requestedPage, totalPages);
+  const start = (page - 1) * pageSize;
+
+  return {
+    items: filtered.slice(start, start + pageSize),
+    total,
+    page,
+    pageSize,
+    totalPages
+  } satisfies PublicShowcaseProjectListResult;
 }
 
 export async function createQuickProjectForCurrentVisitor(input: {
