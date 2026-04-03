@@ -230,7 +230,7 @@ export default async function ShowcasePage({
       ) : (
         <div className="columns-1 [column-gap:1.25rem] md:columns-2 xl:columns-3 2xl:columns-4">
           {items.map((item, index) => (
-            <article key={item.id} className="visual-card mb-5 inline-block w-full [break-inside:avoid] align-top">
+            <article key={item.id} className="showcase-feed-card mb-5 inline-block w-full [break-inside:avoid] align-top">
               <div className={`cover-frame p-4 ${getMasonryVisualHeightClass(index)}`}>
                 <ShowcaseVisual
                   title={item.title}
@@ -254,12 +254,17 @@ export default async function ShowcasePage({
                 </div>
               </div>
               <div className="space-y-4 px-5 py-5 sm:px-6">
-                <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.14em] text-slate-400">
-                  <span>{item.stage}</span>
+                <div className="showcase-feed-meta">
+                  <span className="showcase-feed-pill">{item.stage}</span>
+                  <span>{item.category}</span>
                 </div>
+                <h2 className="display-title line-clamp-2 text-[1.55rem] font-semibold tracking-[-0.05em] text-slate-950">
+                  {item.title}
+                </h2>
+                <p className="line-clamp-2 text-sm leading-7 text-slate-500">{item.judgement}</p>
                 <Link
                   href={item.href}
-                  className="inline-flex w-full cursor-pointer items-center justify-center rounded-full bg-slate-950 px-4 py-3 text-sm font-bold text-white transition hover:bg-slate-800"
+                  className="showcase-feed-button cursor-pointer"
                 >
                   {item.actionLabel}
                 </Link>
