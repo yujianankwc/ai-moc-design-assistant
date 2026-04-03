@@ -156,7 +156,7 @@ export default async function ProjectsPage({
 }) {
   const resolvedSearch = (await searchParams) || {};
   const tabRaw = Array.isArray(resolvedSearch.tab) ? resolvedSearch.tab[0] : resolvedSearch.tab;
-  const tab: MyTab = tabRaw === "published" || tabRaw === "buying" ? tabRaw : "ideas";
+  const requestedTab: MyTab | null = tabRaw === "published" || tabRaw === "buying" ? tabRaw : tabRaw === "ideas" ? "ideas" : null;
 
   let dbProjects: ProjectRow[] = [];
   let buyingIntents: Array<{
@@ -210,6 +210,10 @@ export default async function ProjectsPage({
       };
     })
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+
+  const tab: MyTab =
+    requestedTab ||
+    (ideaProjects.length > 0 ? "ideas" : publishedProjects.length > 0 ? "published" : buyingCards.length > 0 ? "buying" : "ideas");
 
   const currentProjectCards = tab === "published" ? publishedProjects : ideaProjects;
   const topBuyingCard = buyingCards[0] || null;
