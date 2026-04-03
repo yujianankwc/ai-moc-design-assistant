@@ -1,6 +1,6 @@
 "use client";
 
-import { type ChangeEvent, useCallback, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { QuickDirection, QuickScalePreference, QuickStyle } from "@/types/quick-entry";
 
@@ -80,8 +80,7 @@ const QUICK_TOPIC_PRESETS: QuickTopicPreset[] = [
   }
 ];
 
-const defaultWritingHint = "这一句话建议包含三点：你想做什么、最想突出的元素、以及更像摆件/礼品/套装中的哪一种。";
-const defaultPlaceholder = "例如：做一个能摆在办公桌上的城市地标文创积木礼品。";
+const defaultPlaceholder = "例如：我想推进一个适合景区售卖的城市地标积木礼品方向。";
 
 const MAX_IMAGE_DIMENSION = 1920;
 const JPEG_QUALITY = 0.85;
@@ -125,7 +124,7 @@ function compressImage(file: File): Promise<Blob> {
     };
     img.onerror = () => {
       URL.revokeObjectURL(objectUrl);
-      reject(new Error("图片读取失败，请检查文件是否损坏。"));
+      reject(new Error("这张参考图暂时没法读取，请换一张再试。"));
     };
     img.src = objectUrl;
   });
@@ -141,7 +140,7 @@ async function uploadReferenceImage(file: File): Promise<string> {
   });
   const data = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
   if (!response.ok || !data?.url) {
-    throw new Error(data?.error ?? "参考图上传失败，请稍后重试。");
+    throw new Error(data?.error ?? "这张参考图暂时没有上传成功，请稍后重试。");
   }
   return data.url;
 }
@@ -153,6 +152,7 @@ export default function QuickEntryNewPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [selectedTopicId, setSelectedTopicId] = useState<QuickTopicPreset["id"] | "">("");
   const [showMoreSettings, setShowMoreSettings] = useState(false);
+  const [showAdvancedDetails, setShowAdvancedDetails] = useState(false);
 
   const [referencePreviewUrl, setReferencePreviewUrl] = useState<string | null>(null);
   const [referenceUploadState, setReferenceUploadState] = useState<"idle" | "uploading" | "done" | "error">("idle");
@@ -182,6 +182,12 @@ export default function QuickEntryNewPage() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, [referencePreviewUrl]);
 
+  useEffect(() => {
+    return () => {
+      if (referencePreviewUrl) URL.revokeObjectURL(referencePreviewUrl);
+    };
+  }, [referencePreviewUrl]);
+
   const handleReferenceFileChange = useCallback(
     async (event: ChangeEvent<HTMLInputElement>) => {
       const file = event.target.files?.[0];
@@ -203,13 +209,15 @@ export default function QuickEntryNewPage() {
       setReferenceUploadState("uploading");
       setReferenceUploadError("");
       setError("");
+      setForm((prev) => ({ ...prev, referenceImage: "" }));
 
       try {
         const url = await uploadReferenceImage(file);
         setForm((prev) => ({ ...prev, referenceImage: url }));
         setReferenceUploadState("done");
       } catch (uploadError) {
-        const message = uploadError instanceof Error ? uploadError.message : "参考图上传失败，请稍后重试。";
+        const message = uploadError instanceof Error ? uploadError.message : "这张参考图暂时没有上传成功，请稍后重试。";
+        setForm((prev) => ({ ...prev, referenceImage: "" }));
         setReferenceUploadError(message);
         setReferenceUploadState("error");
       }
@@ -220,11 +228,15 @@ export default function QuickEntryNewPage() {
   const handleSubmit = () => {
     const trimmedIdea = form.idea.trim();
     if (!trimmedIdea) {
-      setError("请先写下一句话创意，我们才能生成创意方向结果。");
+      setError("请先把这条方向说清楚一点，我们才能继续帮你做判断。");
       return;
     }
     if (referenceUploadState === "uploading") {
-      setError("参考图正在上传中，请稍等片刻。");
+      setError("参考图还在上传中，等它记下来后再继续。");
+      return;
+    }
+    if (referencePreviewUrl && referenceUploadState === "error") {
+      setError("这张参考图还没有上传成功，请重试上传，或者先移除后再继续。");
       return;
     }
     setError("");
@@ -242,183 +254,216 @@ export default function QuickEntryNewPage() {
   const isUploadBusy = referenceUploadState === "uploading";
 
   return (
-    <section className="mx-auto max-w-3xl space-y-5 sm:space-y-6">
-      <div className="space-y-2">
-        <h1 className="text-xl font-semibold text-slate-900 sm:text-2xl">先试一下你的创意方向</h1>
-        <p className="text-sm text-slate-600">用最少输入快速得到方向判断，再决定是否进入专业方案流程。</p>
+    <section className="mx-auto max-w-4xl space-y-6">
+      <div className="space-y-3">
+        <p className="inline-flex items-center rounded-full border-2 border-amber-200 bg-amber-50 px-3 py-1 text-xs font-bold text-amber-800">
+          第 1 步 · 先试创意
+        </p>
+        <div className="space-y-2 text-center sm:text-left">
+          <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">先说一句你想做什么</h1>
+          <p className="text-sm font-medium text-slate-600">不用先学规则，也不用一次说完整。</p>
+        </div>
       </div>
 
-      <div className="space-y-5 rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
-        <div className="space-y-2">
-          <p className="text-sm font-medium text-slate-700">先选一个方向（建议）</p>
-          <div className="flex flex-wrap gap-2">
-            {QUICK_TOPIC_PRESETS.map((preset) => {
-              const isActive = selectedTopicId === preset.id;
-              return (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => handleQuickTopicSelect(preset)}
-                  className={
-                    isActive
-                      ? "rounded-full border border-blue-300 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-800"
-                      : "rounded-full border border-slate-300 bg-white px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-50"
-                  }
-                >
-                  {preset.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <label className="block space-y-2">
-          <span className="text-sm font-medium text-slate-700">一句话创意 *</span>
+      <div className="space-y-5 rounded-[28px] border-2 border-amber-100 bg-white p-6 shadow-[0_10px_30px_-18px_rgba(217,119,6,0.35)] sm:p-8">
+        <label className="block space-y-3">
+          <span className="text-sm font-bold text-slate-800">你想做什么积木方向？ *</span>
           <textarea
-            rows={4}
+            rows={3}
             value={form.idea}
             onChange={(event) => {
               setForm((prev) => ({ ...prev, idea: event.target.value }));
               if (error) setError("");
             }}
             placeholder={activeTopicPreset?.example || defaultPlaceholder}
-            className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
+            className="w-full rounded-2xl border-2 border-slate-200 px-4 py-3 text-sm outline-none transition-all focus:border-amber-400 focus:ring-4 focus:ring-amber-400/20"
           />
-          <p className="text-xs text-slate-500">{activeTopicPreset?.hint || defaultWritingHint}</p>
+          <p className="text-xs font-medium text-slate-500">
+            先写一句最想做的，我们先帮你判断值不值得继续。
+          </p>
         </label>
 
-        <div className="space-y-3 rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+        <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/50 p-4">
+          <button
+            type="button"
+            onClick={handleSubmit}
+            disabled={isSubmitting || isUploadBusy}
+            className="relative inline-flex w-full items-center justify-center rounded-2xl border border-amber-300 bg-amber-400 px-8 py-4 text-lg font-extrabold tracking-wide text-amber-950 shadow-[0_6px_0_0_#d97706] transition-all duration-200 hover:bg-amber-300 active:translate-y-1 active:shadow-[0_2px_0_0_#d97706] disabled:pointer-events-none disabled:opacity-60"
+          >
+            {isSubmitting ? "正在做方向判断..." : isUploadBusy ? "参考图上传中..." : "先试这个创意"}
+          </button>
+          <p className="text-center text-xs font-medium text-slate-500">先看判断，再决定要不要继续。</p>
+          {error && <p className="text-sm font-bold text-rose-600">{error}</p>}
+        </div>
+
+        <div className="rounded-2xl border border-slate-200 bg-slate-50/40 p-4">
           <button
             type="button"
             onClick={() => setShowMoreSettings((prev) => !prev)}
-            className="text-sm font-medium text-slate-700 underline-offset-2 hover:text-slate-900 hover:underline"
+            className="flex w-full items-center justify-between text-left text-sm font-semibold text-slate-700"
           >
-            {showMoreSettings ? "收起更多设置" : "更多设置（可选）"}
+            <span>{showMoreSettings ? "收起补充设置" : "再补充一下：主题、参考图、风格"}</span>
+            <span className="text-xs text-slate-400">{showMoreSettings ? "收起" : "展开"}</span>
           </button>
+          {!showMoreSettings && (
+            <p className="mt-2 text-xs text-slate-500">现在直接点按钮就能开始，这些都可以先不填。</p>
+          )}
           {showMoreSettings && (
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <span className="text-sm font-medium text-slate-700">参考图（可选）</span>
-                <p className="text-xs text-slate-500">
-                  上传一张景区、建筑或场景照片，AI 会参考它的风格和构图来生成创意预览图。
-                </p>
+            <div className="space-y-5 pt-4">
+              <div className="space-y-3">
+                <span className="text-sm font-bold text-slate-800">没想好方向也没关系</span>
+                <div className="flex flex-wrap gap-2">
+                  {QUICK_TOPIC_PRESETS.map((preset) => {
+                    const isActive = selectedTopicId === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() => handleQuickTopicSelect(preset)}
+                        className={
+                          isActive
+                            ? "rounded-full border-2 border-amber-300 bg-amber-50 px-4 py-1.5 text-xs font-bold text-amber-900 shadow-sm"
+                            : "rounded-full border-2 border-slate-200 bg-white px-4 py-1.5 text-xs font-medium text-slate-600 transition-colors hover:border-amber-200 hover:bg-amber-50/50 hover:text-amber-800"
+                        }
+                      >
+                        {preset.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-                {referencePreviewUrl ? (
-                  <div className="relative inline-block">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={referencePreviewUrl}
-                      alt="参考图预览"
-                      className="h-32 w-auto rounded-lg border border-slate-200 object-cover"
-                    />
-                    {isUploadBusy && (
-                      <div className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/40">
-                        <span className="text-xs font-medium text-white">上传中...</span>
+              <div className="rounded-2xl border border-slate-200 bg-white/70 p-4">
+                <button
+                  type="button"
+                  onClick={() => setShowAdvancedDetails((prev) => !prev)}
+                  className="flex w-full items-center justify-between text-left text-sm font-semibold text-slate-700"
+                >
+                  <span>{showAdvancedDetails ? "收起更细一点的设置" : "继续补充：参考图、风格、体量"}</span>
+                  <span className="text-xs text-slate-400">{showAdvancedDetails ? "收起" : "展开"}</span>
+                </button>
+                {!showAdvancedDetails && (
+                  <p className="mt-2 text-xs text-slate-500">如果你已经有参考图，或者想指定风格，再展开这一步。</p>
+                )}
+              </div>
+
+              {showAdvancedDetails && (
+                <div className="space-y-5">
+                  <div className="space-y-3">
+                    <span className="text-sm font-bold text-slate-800">上传一张你想靠近的参考图（可选）</span>
+                    <p className="text-xs font-medium text-slate-500">不是为了照搬，而是帮助系统更贴近你想推进的风格和画面感。</p>
+
+                    {referencePreviewUrl ? (
+                      <div className="relative inline-block">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={referencePreviewUrl}
+                          alt="参考图预览"
+                          className="h-32 w-auto rounded-xl border-2 border-slate-200 object-cover shadow-sm"
+                        />
+                        {isUploadBusy && (
+                          <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-slate-900/40 backdrop-blur-[1px]">
+                            <span className="text-xs font-bold text-white shadow-sm">上传中...</span>
+                          </div>
+                        )}
+                        {referenceUploadState === "done" && (
+                          <span className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-green-500 text-xs font-bold text-white shadow-sm">
+                            ✓
+                          </span>
+                        )}
+                        {referenceUploadState === "error" && (
+                          <span className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full border-2 border-white bg-rose-500 text-xs font-bold text-white shadow-sm">
+                            !
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={clearReferenceImage}
+                          className="absolute -bottom-2 -right-2 flex h-7 w-7 items-center justify-center rounded-full border-2 border-slate-200 bg-white text-sm font-bold text-slate-600 shadow-sm transition-transform hover:scale-110 hover:border-rose-200 hover:text-rose-500"
+                          title="移除参考图"
+                        >
+                          ×
+                        </button>
                       </div>
+                    ) : (
+                      <label className="flex cursor-pointer items-center justify-center rounded-2xl border-2 border-dashed border-slate-300 bg-white px-4 py-8 text-sm font-medium text-slate-500 transition-colors hover:border-amber-400 hover:bg-amber-50 hover:text-amber-700">
+                        <span>点击选择图片，或拍照上传</span>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          onChange={handleReferenceFileChange}
+                          className="hidden"
+                        />
+                      </label>
                     )}
+
+                    {referenceUploadError && (
+                      <p className="text-xs font-medium text-rose-600">{referenceUploadError}</p>
+                    )}
+
+                    {referencePreviewUrl && referenceUploadState === "error" && (
+                      <p className="text-xs font-medium text-amber-700">当前这张图还没上传成功，这次不会作为参考图提交。</p>
+                    )}
+
                     {referenceUploadState === "done" && (
-                      <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-green-500 text-[10px] text-white">
-                        ✓
-                      </span>
+                      <p className="text-xs font-medium text-green-700">参考图已上传，会用于帮助判断这条方向更适合怎么推进。</p>
                     )}
-                    {referenceUploadState === "error" && (
-                      <span className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-500 text-[10px] text-white">
-                        !
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={clearReferenceImage}
-                      className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border border-slate-300 bg-white text-xs text-slate-600 shadow-sm hover:bg-slate-100"
-                      title="移除参考图"
-                    >
-                      ×
-                    </button>
                   </div>
-                ) : (
-                  <label className="flex cursor-pointer items-center justify-center rounded-lg border-2 border-dashed border-slate-300 bg-white px-4 py-6 text-sm text-slate-500 transition hover:border-blue-400 hover:text-blue-600">
-                    <span>点击选择图片，或拍照上传</span>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      onChange={handleReferenceFileChange}
-                      className="hidden"
-                    />
-                  </label>
-                )}
 
-                {referenceUploadError && <p className="text-xs text-rose-600">{referenceUploadError}</p>}
+                  <div className="grid gap-4 sm:grid-cols-3">
+                    <label className="block space-y-2">
+                      <span className="text-xs font-bold text-slate-700">你更想让它最终更像什么？</span>
+                      <select
+                        value={form.direction}
+                        onChange={(event) =>
+                          setForm((prev) => ({ ...prev, direction: event.target.value as QuickDirection | "" }))
+                        }
+                        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-medium outline-none transition-all focus:border-amber-400 focus:ring-4 focus:ring-amber-400/20"
+                      >
+                        <option value="">我还不确定，先帮我判断</option>
+                        <option value="display">展示感</option>
+                        <option value="cost">成本友好</option>
+                        <option value="production">可量产</option>
+                      </select>
+                    </label>
 
-                {referenceUploadState === "done" && (
-                  <p className="text-xs text-green-700">参考图已上传，将用于引导 AI 生成方向。</p>
-                )}
-              </div>
+                    <label className="block space-y-2">
+                      <span className="text-xs font-bold text-slate-700">你希望它整体更偏哪种感觉？</span>
+                      <select
+                        value={form.style}
+                        onChange={(event) => setForm((prev) => ({ ...prev, style: event.target.value as QuickStyle | "" }))}
+                        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-medium outline-none transition-all focus:border-amber-400 focus:ring-4 focus:ring-amber-400/20"
+                      >
+                        <option value="">我还不确定，先帮我判断</option>
+                        <option value="cute">可爱</option>
+                        <option value="mechanical">机械</option>
+                        <option value="realistic">写实</option>
+                        <option value="fantasy">奇幻</option>
+                      </select>
+                    </label>
 
-              <div className="grid gap-4 md:grid-cols-3">
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-slate-700">方向偏好（可选）</span>
-                  <select
-                    value={form.direction}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, direction: event.target.value as QuickDirection | "" }))
-                    }
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
-                  >
-                    <option value="">我还不确定，先帮我判断</option>
-                    <option value="display">展示感</option>
-                    <option value="cost">成本友好</option>
-                    <option value="production">可量产</option>
-                  </select>
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-slate-700">风格偏好（可选）</span>
-                  <select
-                    value={form.style}
-                    onChange={(event) => setForm((prev) => ({ ...prev, style: event.target.value as QuickStyle | "" }))}
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
-                  >
-                    <option value="">我还不确定，先帮我判断</option>
-                    <option value="cute">可爱</option>
-                    <option value="mechanical">机械</option>
-                    <option value="realistic">写实</option>
-                    <option value="fantasy">奇幻</option>
-                  </select>
-                </label>
-
-                <label className="block space-y-2">
-                  <span className="text-sm font-medium text-slate-700">规模偏好（可选）</span>
-                  <select
-                    value={form.scale}
-                    onChange={(event) =>
-                      setForm((prev) => ({ ...prev, scale: event.target.value as QuickScalePreference | "" }))
-                    }
-                    className="w-full rounded-md border border-slate-300 px-3 py-2 text-sm outline-none ring-blue-500 focus:ring-2"
-                  >
-                    <option value="">我还不确定，先帮我判断</option>
-                    <option value="small">小型（约80-200颗）</option>
-                    <option value="medium">中型（约200-600颗）</option>
-                    <option value="large">大型（约600-1200颗）</option>
-                  </select>
-                </label>
-              </div>
+                    <label className="block space-y-2">
+                      <span className="text-xs font-bold text-slate-700">你大概想先从多大体量开始判断？</span>
+                      <select
+                        value={form.scale}
+                        onChange={(event) =>
+                          setForm((prev) => ({ ...prev, scale: event.target.value as QuickScalePreference | "" }))
+                        }
+                        className="w-full rounded-xl border-2 border-slate-200 bg-white px-3 py-2.5 text-sm font-medium outline-none transition-all focus:border-amber-400 focus:ring-4 focus:ring-amber-400/20"
+                      >
+                        <option value="">我还不确定，先帮我判断</option>
+                        <option value="small">小型（约80-200颗）</option>
+                        <option value="medium">中型（约200-600颗）</option>
+                        <option value="large">大型（约600-1200颗）</option>
+                      </select>
+                    </label>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
-      </div>
-
-      <div className="space-y-3">
-        <button
-          type="button"
-          onClick={handleSubmit}
-          disabled={isSubmitting || isUploadBusy}
-          className="w-full rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 disabled:opacity-50 sm:w-auto"
-        >
-          {isSubmitting ? "正在生成..." : isUploadBusy ? "参考图上传中..." : "立即生成创意方向结果"}
-        </button>
-        <p className="text-xs text-slate-500">先给你方向判断，不等同最终打样结论。</p>
-        {error && <p className="text-xs text-rose-600">{error}</p>}
       </div>
     </section>
   );

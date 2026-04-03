@@ -1010,14 +1010,14 @@ export default function QuickEntryResultPage() {
             </div>
           </div>
         ) : (
-          <div className="mt-4 rounded-2xl border-2 border-blue-200 bg-blue-50 p-6 text-sm text-blue-900 shadow-[0_8px_24px_-16px_rgba(59,130,246,0.45)]">
+          <div className="mt-5 rounded-[28px] border border-blue-200/80 bg-[linear-gradient(180deg,rgba(239,246,255,0.92),rgba(255,255,255,0.92))] p-6 text-sm text-blue-900 shadow-[0_22px_48px_-34px_rgba(59,130,246,0.28)]">
             <div className="mb-3 flex items-center gap-1.5">
               <span className="h-3 w-3 animate-bounce rounded bg-blue-500 [animation-delay:-0.2s]" />
               <span className="h-3 w-3 animate-bounce rounded bg-blue-500 [animation-delay:-0.1s]" />
               <span className="h-3 w-3 animate-bounce rounded bg-blue-500" />
               <span className="ml-2 inline-block h-3 w-3 animate-spin rounded border-2 border-blue-400 border-t-transparent" />
             </div>
-            <p className="font-bold text-base">AI 积木设计师正在为你设计中，预计 3-5 分钟，请耐心等待。</p>
+            <p className="font-bold text-base">AI 积木设计师正在为你设计中，请耐心等待。</p>
             <p className="mt-2 text-blue-800">{imageStageMessage}</p>
             <div className="mt-4 h-3 w-full overflow-hidden rounded-full bg-blue-200/50 shadow-inner">
               <div className="h-full rounded-full bg-blue-500 transition-all duration-1000" style={{ width: `${imageProgress}%` }} />
@@ -1028,12 +1028,12 @@ export default function QuickEntryResultPage() {
                 <Link href="/projects" className="mx-1 text-blue-600 underline underline-offset-4 hover:text-blue-900">
                   项目列表
                 </Link>
-                {showThreeMinuteGuidance ? "稍后查看，完成后会自动出现在那里。" : "稍后查看，设计好了会自动出现。"}
+                {showThreeMinuteGuidance ? "稍后查看，等它整理好会自动出现在那里。" : "稍后查看，设计好了会自动出现。"}
               </p>
             )}
           </div>
         )}
-        <p className="mt-4 text-xs font-medium text-slate-500">用于方向判断。</p>
+        <p className="mt-4 text-xs font-medium text-slate-500">这张图先帮你看方向，不是最终成品。</p>
         {isLoading || isWaitingPrimaryView ? (
           <div className="mt-4 space-y-3">
             <div className="h-5 w-2/5 animate-pulse rounded-lg bg-slate-100" />
