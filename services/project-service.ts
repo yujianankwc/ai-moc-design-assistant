@@ -90,7 +90,24 @@ export function getQuickProjectModerationMeta(notesForFactory: string | null | u
   }
   try {
     const json = notesForFactory.slice(QUICK_PROJECT_DATA_MARKER.length);
-    const parsed = normalizeQuickProjectData(JSON.parse(json) as QuickProjectData);
+    const raw = JSON.parse(json) as QuickProjectData;
+    const parsed = normalizeQuickProjectData(raw);
+    const isLegacyRecord =
+      !Object.prototype.hasOwnProperty.call(raw, "moderationStatus") &&
+      !Object.prototype.hasOwnProperty.call(raw, "publishEligibility") &&
+      !Object.prototype.hasOwnProperty.call(raw, "imageModerationStatus");
+
+    if (isLegacyRecord && parsed.previewImageUrl) {
+      return {
+        moderationStatus: "allow",
+        moderationReason: "",
+        publishEligibility: "public",
+        imageModerationStatus: "approved",
+        lastModeratedAt: null,
+        publishAttemptedAt: null
+      };
+    }
+
     return {
       moderationStatus: parsed.moderationStatus ?? "allow",
       moderationReason: parsed.moderationReason ?? "",
