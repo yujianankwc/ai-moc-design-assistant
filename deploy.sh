@@ -6,6 +6,10 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BRANCH="${DEPLOY_BRANCH:-main}"
 PM2_NAME="${PM2_NAME:-ai-moc-design-assistant}"
 FORCE_SYNC=0
+HEALTHCHECK_URL="${HEALTHCHECK_URL:-http://127.0.0.1:3000/}"
+HEALTHCHECK_ATTEMPTS="${HEALTHCHECK_ATTEMPTS:-10}"
+HEALTHCHECK_INTERVAL_SECONDS="${HEALTHCHECK_INTERVAL_SECONDS:-3}"
+HEALTHCHECK_TIMEOUT_SECONDS="${HEALTHCHECK_TIMEOUT_SECONDS:-15}"
 
 usage() {
   cat <<'EOF'
@@ -47,6 +51,10 @@ require_cmd npm
 require_cmd node
 require_cmd pm2
 require_cmd curl
+
+healthcheck() {
+  curl -I -sS --max-time "$HEALTHCHECK_TIMEOUT_SECONDS" "$HEALTHCHECK_URL"
+}
 
 cd "$APP_DIR"
 
@@ -111,7 +119,24 @@ echo "==> PM2 status"
 pm2 show "$PM2_NAME" | sed -n '1,40p'
 
 echo "==> Local health check"
-curl -I -s http://127.0.0.1:3000 | head -n 5
+healthcheck_output=""
 
-echo "==> Done"
-echo "Deployed commit: $(git rev-parse --short HEAD)"
+for attempt in $(seq 1 "$HEALTHCHECK_ATTEMPTS"); do
+  if healthcheck_output="$(healthcheck)"; then
+    printf '%s\n' "$healthcheck_output" | head -n 5
+    echo "==> Health check passed on attempt $attempt/$HEALTHCHECK_ATTEMPTS"
+    echo "==> Done"
+    echo "Deployed commit: $(git rev-parse --short HEAD)"
+    exit 0
+  fi
+
+  echo "Health check attempt $attempt/$HEALTHCHECK_ATTEMPTS failed for $HEALTHCHECK_URL" >&2
+  if [[ "$attempt" -lt "$HEALTHCHECK_ATTEMPTS" ]]; then
+    sleep "$HEALTHCHECK_INTERVAL_SECONDS"
+  fi
+done
+
+echo "Health check failed after $HEALTHCHECK_ATTEMPTS attempts." >&2
+echo "Recent PM2 logs:" >&2
+pm2 logs "$PM2_NAME" --lines 40 --nostream >&2 || true
+exit 1
