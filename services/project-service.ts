@@ -866,8 +866,139 @@ export async function listProjectsForCurrentVisitor() {
   }));
 }
 
+async function buildLatestIntentMapByProjectIds(input: {
+  projectIds: string[];
+  userId?: string | null;
+  sourceType?: string | null;
+}) {
+  const supabase = getSupabaseServerClient();
+  if (input.projectIds.length === 0) {
+    return {} as Record<
+      string,
+      {
+        id: string;
+        source_type: string;
+        status: string;
+        updated_at: string;
+        latest_quote_status?: string | null;
+        latest_quote_version?: number | null;
+        showcase_control?: ShowcaseDisplayControl | null;
+      }
+    >;
+  }
+
+  let intentQuery = supabase
+    .from("intent_orders")
+    .select("id,project_id,source_type,status,updated_at,operator_note")
+    .in("project_id", input.projectIds)
+    .order("updated_at", { ascending: false });
+
+  if (input.userId?.trim()) {
+    intentQuery = intentQuery.eq("user_id", input.userId.trim());
+  }
+
+  if (input.sourceType?.trim()) {
+    intentQuery = intentQuery.eq("source_type", input.sourceType.trim());
+  }
+
+  const { data: intentRows, error: intentError } = await intentQuery;
+
+  if (intentError) {
+    throw new Error(`项目关联推进意向读取失败: ${intentError.message}`);
+  }
+
+  const latestIntentIds = (intentRows || []).map((row) => row.id);
+  let quoteMap: Record<string, { quote_status: string; version: number }> = {};
+
+  if (latestIntentIds.length > 0) {
+    const { data: quoteRows, error: quoteError } = await supabase
+      .from("quote_sheets")
+      .select("intent_id,quote_status,version")
+      .in("intent_id", latestIntentIds)
+      .order("version", { ascending: false });
+
+    if (quoteError) {
+      throw new Error(`项目关联报价说明读取失败: ${quoteError.message}`);
+    }
+
+    const quoteByIntent: Record<string, { quote_status: string; version: number }> = {};
+    for (const row of quoteRows || []) {
+      if (row.intent_id && !quoteByIntent[row.intent_id]) {
+        quoteByIntent[row.intent_id] = {
+          quote_status: row.quote_status,
+          version: row.version
+        };
+      }
+    }
+    quoteMap = quoteByIntent;
+  }
+
+  const intentMap: Record<
+    string,
+    {
+      id: string;
+      source_type: string;
+      status: string;
+      updated_at: string;
+      latest_quote_status?: string | null;
+      latest_quote_version?: number | null;
+      showcase_control?: ShowcaseDisplayControl | null;
+    }
+  > = {};
+
+  for (const row of intentRows || []) {
+    if (row.project_id && !intentMap[row.project_id]) {
+      intentMap[row.project_id] = {
+        ...row,
+        latest_quote_status: quoteMap[row.id]?.quote_status || null,
+        latest_quote_version: quoteMap[row.id]?.version ?? null,
+        showcase_control: parseShowcaseDisplayControl(row.operator_note)
+      };
+    }
+  }
+
+  return intentMap;
+}
+
 export async function listProjectsByDemoUser() {
   return listProjectsForCurrentVisitor();
+}
+
+export async function listPublicShowcaseProjects() {
+  const supabase = getSupabaseServerClient();
+  const { data: intentRows, error: intentError } = await supabase
+    .from("intent_orders")
+    .select("id,project_id,source_type,status,updated_at,operator_note")
+    .eq("source_type", "crowdfunding")
+    .order("updated_at", { ascending: false });
+
+  if (intentError) {
+    throw new Error(`公开展示意向读取失败: ${intentError.message}`);
+  }
+
+  const projectIds = Array.from(new Set((intentRows || []).map((item) => item.project_id).filter(Boolean)));
+  if (projectIds.length === 0) return [] as ProjectRow[];
+
+  const { data: projectData, error: projectError } = await supabase
+    .from("projects")
+    .select("id,user_id,title,status,updated_at,category,notes_for_factory")
+    .in("id", projectIds)
+    .order("updated_at", { ascending: false });
+
+  if (projectError) {
+    throw new Error(`公开展示项目读取失败: ${projectError.message}`);
+  }
+
+  const projectRows = (projectData ?? []) as ProjectRow[];
+  const intentMap = await buildLatestIntentMapByProjectIds({
+    projectIds: projectRows.map((item) => item.id),
+    sourceType: "crowdfunding"
+  });
+
+  return projectRows.map((item) => ({
+    ...item,
+    linked_intent: intentMap[item.id] || null
+  }));
 }
 
 export async function createQuickProjectForCurrentVisitor(input: {
@@ -1321,6 +1452,142 @@ export async function getProjectWithOutputById(projectId: string) {
 
     if (followupError) {
       throw new Error(`项目关联推进动态读取失败: ${followupError.message}`);
+    }
+
+    const quoteMap: Record<string, { quote_status: string; version: number }> = {};
+    for (const row of latestQuoteRows || []) {
+      if (row.intent_id && !quoteMap[row.intent_id]) {
+        quoteMap[row.intent_id] = {
+          quote_status: row.quote_status,
+          version: row.version
+        };
+      }
+    }
+
+    const followupMap: Record<
+      string,
+      Array<{
+        id: string;
+        action_type: string | null;
+        content: string | null;
+        from_status?: string | null;
+        to_status?: string | null;
+        created_at: string;
+      }>
+    > = {};
+
+    for (const row of followupRows || []) {
+      if (!row.intent_id) continue;
+      if (!followupMap[row.intent_id]) {
+        followupMap[row.intent_id] = [];
+      }
+      if (followupMap[row.intent_id].length < 3) {
+        followupMap[row.intent_id].push({
+          id: row.id,
+          action_type: row.action_type,
+          content: row.content,
+          from_status: row.from_status,
+          to_status: row.to_status,
+          created_at: row.created_at
+        });
+      }
+    }
+
+    allLinkedIntentSummaries = intentRows.map((item) => ({
+      ...item,
+      latest_quote_status: quoteMap[item.id]?.quote_status ?? null,
+      latest_quote_version: quoteMap[item.id]?.version ?? null,
+      showcase_control: parseShowcaseDisplayControl(item.operator_note),
+      latest_followup: followupMap[item.id]?.[0] || null
+    }));
+
+    if (latestIntent) {
+      linkedIntentWithSummary = {
+        ...latestIntent,
+        latest_quote_status: quoteMap[latestIntent.id]?.quote_status ?? null,
+        latest_quote_version: quoteMap[latestIntent.id]?.version ?? null,
+        showcase_control: parseShowcaseDisplayControl(latestIntent.operator_note),
+        recent_followups: followupMap[latestIntent.id] ?? []
+      };
+    }
+  }
+
+  return {
+    project: {
+      ...(projectData as ProjectDetailRow),
+      linked_intent: linkedIntentWithSummary,
+      all_linked_intents: allLinkedIntentSummaries
+    },
+    output: (outputData as ProjectOutputRow | null) ?? null
+  };
+}
+
+export async function getPublicProjectWithOutputById(projectId: string) {
+  const supabase = getSupabaseServerClient();
+
+  const { data: projectData, error: projectError } = await supabase
+    .from("projects")
+    .select("id,user_id,title,category,style,size_target,audience,status,updated_at,notes_for_factory")
+    .eq("id", projectId)
+    .maybeSingle();
+
+  if (projectError) {
+    throw new Error(`公开项目详情读取失败: ${projectError.message}`);
+  }
+
+  if (!projectData) {
+    return null;
+  }
+
+  const { data: outputData, error: outputError } = await supabase
+    .from("project_outputs")
+    .select(
+      "id,project_id,design_summary,design_positioning,build_difficulty,structure_notes,highlight_points,bom_groups,substitution_suggestions,risk_notes,production_hint,production_score,recommended_next_step,internal_recommendation,recommended_service,editable_version,created_at,updated_at"
+    )
+    .eq("project_id", projectId)
+    .maybeSingle();
+
+  if (outputError) {
+    throw new Error(`公开项目结果读取失败: ${outputError.message}`);
+  }
+
+  const { data: intentRows, error: intentError } = await supabase
+    .from("intent_orders")
+    .select("id,project_id,source_type,status,updated_at,operator_note")
+    .eq("project_id", projectId)
+    .eq("source_type", "crowdfunding")
+    .order("updated_at", { ascending: false });
+
+  if (intentError) {
+    throw new Error(`公开项目关联推进意向读取失败: ${intentError.message}`);
+  }
+
+  const latestIntent = intentRows?.[0] || null;
+  let linkedIntentWithSummary: ProjectDetailRow["linked_intent"] = latestIntent;
+  let allLinkedIntentSummaries: NonNullable<ProjectDetailRow["all_linked_intents"]> = [];
+
+  if (intentRows && intentRows.length > 0) {
+    const intentIds = intentRows.map((item) => item.id);
+    const [{ data: latestQuoteRows, error: latestQuoteError }, { data: followupRows, error: followupError }] =
+      await Promise.all([
+        supabase
+          .from("quote_sheets")
+          .select("intent_id,quote_status,version,created_at")
+          .in("intent_id", intentIds)
+          .order("version", { ascending: false }),
+        supabase
+          .from("intent_followups")
+          .select("id,intent_id,action_type,content,from_status,to_status,created_at")
+          .in("intent_id", intentIds)
+          .order("created_at", { ascending: false })
+      ]);
+
+    if (latestQuoteError) {
+      throw new Error(`公开项目关联报价读取失败: ${latestQuoteError.message}`);
+    }
+
+    if (followupError) {
+      throw new Error(`公开项目关联推进动态读取失败: ${followupError.message}`);
     }
 
     const quoteMap: Record<string, { quote_status: string; version: number }> = {};

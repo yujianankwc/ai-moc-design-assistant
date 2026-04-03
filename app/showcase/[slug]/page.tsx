@@ -22,7 +22,7 @@ import { mapAudience } from "@/lib/display-mappers";
 import { mapProjectCategoryToShowcaseCategory } from "@/lib/showcase-category";
 import {
   getQuickProjectPreviewImageUrl,
-  getProjectWithOutputById,
+  getPublicProjectWithOutputById,
   getQuickProjectModerationMeta,
   getShowcaseInteractionSummary,
   SYSTEM_FALLBACK_MARKER
@@ -83,7 +83,7 @@ async function getDetailModel(slug: string): Promise<DetailModel | null> {
 
   if (!isUuid(slug)) return null;
 
-  const detail = await getProjectWithOutputById(slug).catch(() => null);
+  const detail = await getPublicProjectWithOutputById(slug).catch(() => null);
   if (!detail?.project?.linked_intent || detail.project.linked_intent.source_type !== "crowdfunding") {
     return null;
   }

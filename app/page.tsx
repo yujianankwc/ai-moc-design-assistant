@@ -13,7 +13,7 @@ import { mapProjectCategoryToShowcaseCategory } from "@/lib/showcase-category";
 import {
   getQuickProjectPreviewImageUrl,
   isQuickProjectPubliclyVisible,
-  listProjectsForCurrentVisitor
+  listPublicShowcaseProjects
 } from "@/services/project-service";
 import type { ProjectRow } from "@/types/project";
 
@@ -85,7 +85,7 @@ function mapRealProjectToLandingCard(project: ProjectRow): LandingCardItem | nul
 export default async function LandingPage() {
   let realProjects: ProjectRow[] = [];
   try {
-    realProjects = await listProjectsForCurrentVisitor();
+    realProjects = await listPublicShowcaseProjects();
   } catch {
     realProjects = [];
   }

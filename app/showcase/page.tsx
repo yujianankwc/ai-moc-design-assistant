@@ -14,7 +14,7 @@ import { mapProjectCategoryToShowcaseCategory, SHOWCASE_CATEGORY_FILTERS } from 
 import {
   getQuickProjectPreviewImageUrl,
   isQuickProjectPubliclyVisible,
-  listProjectsForCurrentVisitor
+  listPublicShowcaseProjects
 } from "@/services/project-service";
 import type { ProjectRow } from "@/types/project";
 
@@ -91,7 +91,7 @@ export default async function ShowcasePage({
 
   let realProjects: ProjectRow[] = [];
   try {
-    realProjects = await listProjectsForCurrentVisitor();
+    realProjects = await listPublicShowcaseProjects();
   } catch {
     realProjects = [];
   }
