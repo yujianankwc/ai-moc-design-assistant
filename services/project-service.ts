@@ -1011,7 +1011,9 @@ export async function listPublicShowcaseProjects(input?: {
   pageSize?: number;
   category?: string | null;
   sort?: PublicShowcaseSortKey | null;
-}) {
+}): Promise<PublicShowcaseProjectListResult> {
+  const pageSize = Math.max(1, Math.min(input?.pageSize || 12, 48));
+  const requestedPage = Math.max(1, input?.page || 1);
   const supabase = getSupabaseServerClient();
   const { data: intentRows, error: intentError } = await supabase
     .from("intent_orders")
@@ -1024,7 +1026,15 @@ export async function listPublicShowcaseProjects(input?: {
   }
 
   const projectIds = Array.from(new Set((intentRows || []).map((item) => item.project_id).filter(Boolean)));
-  if (projectIds.length === 0) return [] as ProjectRow[];
+  if (projectIds.length === 0) {
+    return {
+      items: [],
+      total: 0,
+      page: requestedPage,
+      pageSize,
+      totalPages: 0
+    };
+  }
 
   const { data: projectData, error: projectError } = await supabase
     .from("projects")
@@ -1043,8 +1053,6 @@ export async function listPublicShowcaseProjects(input?: {
   });
 
   const sort = input?.sort || "latest";
-  const pageSize = Math.max(1, Math.min(input?.pageSize || 12, 48));
-  const requestedPage = Math.max(1, input?.page || 1);
   const filtered = projectRows
     .map((item) => ({
       ...item,
