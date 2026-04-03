@@ -39,6 +39,7 @@ export default function ShowcaseInteractionBar({
   const [watching, setWatching] = useState(initialWatching);
   const [persistedLikes, setPersistedLikes] = useState(initialPersistedLikes);
   const [persistedWatchers, setPersistedWatchers] = useState(initialPersistedWatchers);
+  const [isVoting, setIsVoting] = useState(false);
   const [isBuying, setIsBuying] = useState(false);
   const [hasBoughtInterest, setHasBoughtInterest] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -70,27 +71,76 @@ export default function ShowcaseInteractionBar({
       liked?: boolean;
       watching?: boolean;
     };
-    setPersistedLikes(successData.likes ?? persistedLikes);
-    setPersistedWatchers(successData.watchers ?? persistedWatchers);
-    setLiked(Boolean(successData.liked));
-    setWatching(Boolean(successData.watching));
+    return successData;
   };
 
   const chooseVote = async (actionType: "like" | "watch") => {
     setFeedback("");
+    if (isVoting) return;
     if (actionType === "like" && liked) return;
     if (actionType === "watch" && watching) return;
+
+    const previousState = {
+      liked,
+      watching,
+      persistedLikes,
+      persistedWatchers
+    };
+
+    const nextState =
+      actionType === "like"
+        ? {
+            liked: true,
+            watching: false,
+            persistedLikes: previousState.persistedLikes + (previousState.liked ? 0 : 1),
+            persistedWatchers: Math.max(0, previousState.persistedWatchers - (previousState.watching ? 1 : 0))
+          }
+        : {
+            liked: false,
+            watching: true,
+            persistedLikes: Math.max(0, previousState.persistedLikes - (previousState.liked ? 1 : 0)),
+            persistedWatchers: previousState.persistedWatchers + (previousState.watching ? 0 : 1)
+          };
+
+    setIsVoting(true);
+    setLiked(nextState.liked);
+    setWatching(nextState.watching);
+    setPersistedLikes(nextState.persistedLikes);
+    setPersistedWatchers(nextState.persistedWatchers);
+
     try {
+      let latestState:
+        | {
+            likes?: number;
+            watchers?: number;
+            liked?: boolean;
+            watching?: boolean;
+          }
+        | undefined;
+
       if (actionType === "like" && watching) {
-        await postInteraction("watch", false);
+        latestState = await postInteraction("watch", false);
       }
       if (actionType === "watch" && liked) {
-        await postInteraction("like", false);
+        latestState = await postInteraction("like", false);
       }
-      await postInteraction(actionType, true);
+      latestState = await postInteraction(actionType, true);
+
+      if (latestState) {
+        setPersistedLikes(latestState.likes ?? nextState.persistedLikes);
+        setPersistedWatchers(latestState.watchers ?? nextState.persistedWatchers);
+        setLiked(latestState.liked ?? nextState.liked);
+        setWatching(latestState.watching ?? nextState.watching);
+      }
     } catch (error) {
+      setLiked(previousState.liked);
+      setWatching(previousState.watching);
+      setPersistedLikes(previousState.persistedLikes);
+      setPersistedWatchers(previousState.persistedWatchers);
       const message = error instanceof Error ? error.message : "这次投票暂时没有记下来，请稍后重试。";
       setFeedback(message);
+    } finally {
+      setIsVoting(false);
     }
   };
 
@@ -166,7 +216,8 @@ export default function ShowcaseInteractionBar({
         <button
           type="button"
           onClick={() => void chooseVote("like")}
-          className={`inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-bold transition-all ${
+          disabled={isVoting}
+          className={`inline-flex cursor-pointer items-center justify-center rounded-2xl px-4 py-3 text-sm font-bold transition-all disabled:pointer-events-none disabled:opacity-70 ${
             liked
               ? "bg-slate-900 text-white shadow-[0_4px_0_0_#0f172a]"
               : "border-2 border-slate-200 bg-white text-slate-700 shadow-[0_4px_0_0_#e2e8f0] hover:border-slate-300"
@@ -177,7 +228,8 @@ export default function ShowcaseInteractionBar({
         <button
           type="button"
           onClick={() => void chooseVote("watch")}
-          className={`inline-flex items-center justify-center rounded-2xl px-4 py-3 text-sm font-bold transition-all ${
+          disabled={isVoting}
+          className={`inline-flex cursor-pointer items-center justify-center rounded-2xl px-4 py-3 text-sm font-bold transition-all disabled:pointer-events-none disabled:opacity-70 ${
             watching
               ? "bg-amber-400 text-amber-950 shadow-[0_4px_0_0_#d97706]"
               : "border-2 border-amber-200 bg-white text-amber-800 shadow-[0_4px_0_0_#fde68a] hover:bg-amber-50"
@@ -190,14 +242,14 @@ export default function ShowcaseInteractionBar({
             type="button"
             onClick={() => void submitBuyIntent()}
             disabled={isBuying || hasBoughtInterest}
-            className="inline-flex items-center justify-center rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white shadow-[0_4px_0_0_#047857] transition-all hover:bg-emerald-400 active:translate-y-1 active:shadow-none disabled:pointer-events-none disabled:opacity-60"
+            className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-extrabold text-white shadow-[0_4px_0_0_#047857] transition-all hover:bg-emerald-400 active:translate-y-1 active:shadow-none disabled:pointer-events-none disabled:opacity-60"
           >
             {hasBoughtInterest ? "已记下我想买" : isBuying ? "正在记下..." : "我想买量产版"}
           </button>
         ) : null}
         <Link
           href={quickTryHref}
-          className="inline-flex items-center justify-center rounded-2xl bg-amber-400 px-4 py-3 text-sm font-extrabold text-amber-950 shadow-[0_4px_0_0_#d97706] transition-all hover:bg-amber-300 active:translate-y-1 active:shadow-none"
+          className="inline-flex cursor-pointer items-center justify-center rounded-2xl bg-amber-400 px-4 py-3 text-sm font-extrabold text-amber-950 shadow-[0_4px_0_0_#d97706] transition-all hover:bg-amber-300 active:translate-y-1 active:shadow-none"
         >
           我也想试一个
         </Link>
