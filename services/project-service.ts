@@ -1,5 +1,11 @@
 import { cookies, headers } from "next/headers";
 import { buildEditableVersion } from "@/lib/editable-version";
+import {
+  buildAllowedModerationMeta,
+  buildBlockedModerationMeta,
+  isQuickProjectPubliclyVisible as isQuickProjectPubliclyVisibleByMeta,
+  reviewQuickProjectForPublicPublish
+} from "@/lib/content-moderation";
 import { evaluateProductionScoreByRules } from "@/lib/production-score-rules";
 import {
   formatShowcaseDisplayControl,
@@ -23,8 +29,12 @@ import type { ProjectOutputRow } from "@/types/project-output";
 import type {
   QuickEntryInput,
   QuickEntryResult,
+  QuickImageModerationStatus,
   QuickImageModelAlias,
-  QuickImageStatus
+  QuickImageStatus,
+  QuickModerationReason,
+  QuickModerationStatus,
+  QuickPublishEligibility
 } from "@/types/quick-entry";
 import type {
   CreateIntentInput,
@@ -74,6 +84,30 @@ export function getQuickProjectImageMeta(notesForFactory: string | null | undefi
   }
 }
 
+export function getQuickProjectModerationMeta(notesForFactory: string | null | undefined): QuickProjectModerationMeta {
+  if (!notesForFactory || !notesForFactory.startsWith(QUICK_PROJECT_DATA_MARKER)) {
+    return buildDefaultQuickProjectModerationMeta();
+  }
+  try {
+    const json = notesForFactory.slice(QUICK_PROJECT_DATA_MARKER.length);
+    const parsed = normalizeQuickProjectData(JSON.parse(json) as QuickProjectData);
+    return {
+      moderationStatus: parsed.moderationStatus ?? "allow",
+      moderationReason: parsed.moderationReason ?? "",
+      publishEligibility: parsed.publishEligibility ?? "private_draft",
+      imageModerationStatus: parsed.imageModerationStatus ?? "pending",
+      lastModeratedAt: parsed.lastModeratedAt ?? null,
+      publishAttemptedAt: parsed.publishAttemptedAt ?? null
+    };
+  } catch {
+    return buildDefaultQuickProjectModerationMeta();
+  }
+}
+
+export function isQuickProjectPubliclyVisible(notesForFactory: string | null | undefined): boolean {
+  return isQuickProjectPubliclyVisibleByMeta(getQuickProjectModerationMeta(notesForFactory));
+}
+
 type QuickProjectData = {
   input: QuickEntryInput;
   result: QuickEntryResult;
@@ -85,6 +119,12 @@ type QuickProjectData = {
   imageLastError?: string;
   imageAttemptCount?: number;
   imageModelAlias?: QuickImageModelAlias | null;
+  moderationStatus?: QuickModerationStatus;
+  moderationReason?: QuickModerationReason | "";
+  publishEligibility?: QuickPublishEligibility;
+  imageModerationStatus?: QuickImageModerationStatus;
+  lastModeratedAt?: string | null;
+  publishAttemptedAt?: string | null;
 };
 
 export type QuickProjectImageMeta = {
@@ -97,6 +137,15 @@ export type QuickProjectImageMeta = {
   imageModelAlias: QuickImageModelAlias | null;
 };
 
+export type QuickProjectModerationMeta = {
+  moderationStatus: QuickModerationStatus;
+  moderationReason: QuickModerationReason | "";
+  publishEligibility: QuickPublishEligibility;
+  imageModerationStatus: QuickImageModerationStatus;
+  lastModeratedAt: string | null;
+  publishAttemptedAt: string | null;
+};
+
 function buildDefaultQuickProjectImageMeta(): QuickProjectImageMeta {
   return {
     previewImageUrl: null,
@@ -106,6 +155,18 @@ function buildDefaultQuickProjectImageMeta(): QuickProjectImageMeta {
     imageLastError: "",
     imageAttemptCount: 0,
     imageModelAlias: null
+  };
+}
+
+function buildDefaultQuickProjectModerationMeta(): QuickProjectModerationMeta {
+  const base = buildAllowedModerationMeta();
+  return {
+    moderationStatus: base.moderationStatus,
+    moderationReason: base.moderationReason,
+    publishEligibility: base.publishEligibility,
+    imageModerationStatus: base.imageModerationStatus,
+    lastModeratedAt: base.lastModeratedAt,
+    publishAttemptedAt: base.publishAttemptedAt ?? null
   };
 }
 
@@ -123,6 +184,22 @@ function normalizeQuickImageModelAlias(value: unknown): QuickImageModelAlias | n
   return value === "default" || value === "nano_banner" || value === "nano_banana" ? value : null;
 }
 
+function normalizeQuickModerationStatus(value: unknown): QuickModerationStatus {
+  return value === "block" ? "block" : "allow";
+}
+
+function normalizeQuickPublishEligibility(value: unknown): QuickPublishEligibility {
+  return value === "public" ? "public" : "private_draft";
+}
+
+function normalizeQuickImageModerationStatus(value: unknown): QuickImageModerationStatus {
+  return value === "approved" || value === "blocked" ? value : "pending";
+}
+
+function normalizeQuickModerationReason(value: unknown): QuickModerationReason | "" {
+  return typeof value === "string" ? (value as QuickModerationReason | "") : "";
+}
+
 function normalizeQuickProjectData(input: QuickProjectData): QuickProjectData {
   const previewImageUrl =
     typeof input.previewImageUrl === "string" && input.previewImageUrl.trim()
@@ -137,6 +214,10 @@ function normalizeQuickProjectData(input: QuickProjectData): QuickProjectData {
       : imageStatus === "failed"
         ? imageWarning
         : "";
+  const moderationStatus = normalizeQuickModerationStatus(input.moderationStatus);
+  const publishEligibility = normalizeQuickPublishEligibility(input.publishEligibility);
+  const imageModerationStatus = normalizeQuickImageModerationStatus(input.imageModerationStatus);
+  const moderationReason = normalizeQuickModerationReason(input.moderationReason);
   return {
     ...input,
     previewImageUrl,
@@ -145,7 +226,13 @@ function normalizeQuickProjectData(input: QuickProjectData): QuickProjectData {
     imageUpdatedAt: typeof input.imageUpdatedAt === "string" ? input.imageUpdatedAt : null,
     imageLastError: imageStatus === "failed" ? imageLastError : "",
     imageAttemptCount: typeof input.imageAttemptCount === "number" ? input.imageAttemptCount : 0,
-    imageModelAlias: normalizeQuickImageModelAlias(input.imageModelAlias)
+    imageModelAlias: normalizeQuickImageModelAlias(input.imageModelAlias),
+    moderationStatus,
+    moderationReason: moderationStatus === "block" ? moderationReason : "",
+    publishEligibility,
+    imageModerationStatus,
+    lastModeratedAt: typeof input.lastModeratedAt === "string" ? input.lastModeratedAt : null,
+    publishAttemptedAt: typeof input.publishAttemptedAt === "string" ? input.publishAttemptedAt : null
   };
 }
 
@@ -799,7 +886,8 @@ export async function createQuickProjectForCurrentVisitor(input: {
     input: input.quickInput,
     result: input.quickResult,
     textWarning: input.textWarning ?? "",
-    ...buildDefaultQuickProjectImageMeta()
+    ...buildDefaultQuickProjectImageMeta(),
+    ...buildDefaultQuickProjectModerationMeta()
   };
 
   const { data, error } = await supabase
@@ -884,11 +972,22 @@ export async function updateQuickProjectResultForCurrentVisitor(input: {
         imageAttemptCount: previous?.imageAttemptCount ?? 0,
         imageModelAlias: previous?.imageModelAlias ?? null
       };
+  const moderationMeta = previous
+    ? {
+        moderationStatus: previous.moderationStatus ?? "allow",
+        moderationReason: previous.moderationReason ?? "",
+        publishEligibility: previous.publishEligibility ?? "private_draft",
+        imageModerationStatus: input.resetImage ? "pending" : previous.imageModerationStatus ?? "pending",
+        lastModeratedAt: previous.lastModeratedAt ?? null,
+        publishAttemptedAt: previous.publishAttemptedAt ?? null
+      }
+    : buildDefaultQuickProjectModerationMeta();
   const nextData: QuickProjectData = {
     input: input.quickInput,
     result: input.quickResult,
     textWarning: input.textWarning ?? "",
-    ...imageMeta
+    ...imageMeta,
+    ...moderationMeta
   };
 
   const { error: updateError } = await supabase
@@ -965,7 +1064,13 @@ export async function getQuickProjectByIdForCurrentVisitor(projectId: string) {
     imageLastError: quickData.imageLastError ?? "",
     imageAttemptCount: quickData.imageAttemptCount ?? 0,
     imageModelAlias: quickData.imageModelAlias ?? null,
-    textWarning: quickData.textWarning ?? ""
+    textWarning: quickData.textWarning ?? "",
+    moderationStatus: quickData.moderationStatus ?? "allow",
+    moderationReason: quickData.moderationReason ?? "",
+    publishEligibility: quickData.publishEligibility ?? "private_draft",
+    imageModerationStatus: quickData.imageModerationStatus ?? "pending",
+    lastModeratedAt: quickData.lastModeratedAt ?? null,
+    publishAttemptedAt: quickData.publishAttemptedAt ?? null
   };
 }
 
@@ -983,6 +1088,12 @@ export async function updateQuickProjectImageForCurrentVisitor(input: {
   imageLastError?: string;
   imageAttemptCount?: number;
   imageModelAlias?: QuickImageModelAlias | null;
+  moderationStatus?: QuickModerationStatus;
+  moderationReason?: QuickModerationReason | "";
+  publishEligibility?: QuickPublishEligibility;
+  imageModerationStatus?: QuickImageModerationStatus;
+  lastModeratedAt?: string | null;
+  publishAttemptedAt?: string | null;
 }) {
   const supabase = getSupabaseServerClient();
   const currentVisitorUser = await ensureCurrentVisitorUser();
@@ -1047,7 +1158,21 @@ export async function updateQuickProjectImageForCurrentVisitor(input: {
     imageAttemptCount:
       typeof input.imageAttemptCount === "number" ? input.imageAttemptCount : quickData.imageAttemptCount ?? 0,
     imageModelAlias:
-      input.imageModelAlias === undefined ? quickData.imageModelAlias ?? null : input.imageModelAlias
+      input.imageModelAlias === undefined ? quickData.imageModelAlias ?? null : input.imageModelAlias,
+    moderationStatus:
+      input.moderationStatus === undefined ? quickData.moderationStatus ?? "allow" : input.moderationStatus,
+    moderationReason:
+      input.moderationReason === undefined ? quickData.moderationReason ?? "" : input.moderationReason,
+    publishEligibility:
+      input.publishEligibility === undefined ? quickData.publishEligibility ?? "private_draft" : input.publishEligibility,
+    imageModerationStatus:
+      input.imageModerationStatus === undefined
+        ? quickData.imageModerationStatus ?? "pending"
+        : input.imageModerationStatus,
+    lastModeratedAt:
+      input.lastModeratedAt === undefined ? quickData.lastModeratedAt ?? null : input.lastModeratedAt,
+    publishAttemptedAt:
+      input.publishAttemptedAt === undefined ? quickData.publishAttemptedAt ?? null : input.publishAttemptedAt
   };
 
   const { error: updateError } = await supabase
@@ -1068,6 +1193,64 @@ export async function updateQuickProjectImageForDemoUser(input: {
   imageWarning?: string;
 }) {
   return updateQuickProjectImageForCurrentVisitor(input);
+}
+
+export async function reviewQuickProjectForPublicPublishForCurrentVisitor(input: {
+  projectId: string;
+  publishAttemptedAt?: string | null;
+}) {
+  const quickProject = await getQuickProjectByIdForCurrentVisitor(input.projectId);
+  if (!quickProject) {
+    throw new Error("未找到轻量项目，无法校验公开发布。");
+  }
+
+  const reviewed = reviewQuickProjectForPublicPublish({
+    quickInput: quickProject.input,
+    quickResult: quickProject.result,
+    previewImageUrl: quickProject.previewImageUrl,
+    imageWarning: quickProject.imageWarning,
+    imageLastError: quickProject.imageLastError,
+    previous: {
+      moderationStatus: quickProject.moderationStatus,
+      moderationReason: quickProject.moderationReason,
+      publishEligibility: quickProject.publishEligibility,
+      imageModerationStatus: quickProject.imageModerationStatus,
+      lastModeratedAt: quickProject.lastModeratedAt,
+      publishAttemptedAt: quickProject.publishAttemptedAt
+    },
+    publishAttemptedAt: input.publishAttemptedAt ?? new Date().toISOString()
+  });
+
+  await updateQuickProjectImageForCurrentVisitor({
+    projectId: input.projectId,
+    idea: quickProject.input.idea,
+    moderationStatus: reviewed.moderationStatus,
+    moderationReason: reviewed.moderationReason,
+    publishEligibility: reviewed.publishEligibility,
+    imageModerationStatus: reviewed.imageModerationStatus,
+    lastModeratedAt: reviewed.lastModeratedAt,
+    publishAttemptedAt: reviewed.publishAttemptedAt
+  });
+
+  return reviewed;
+}
+
+export async function markQuickProjectModerationBlockedForCurrentVisitor(input: {
+  projectId: string;
+  idea: string;
+  reason: QuickModerationReason;
+  imageModerationStatus?: QuickImageModerationStatus;
+}) {
+  const nextMeta = buildBlockedModerationMeta(input.reason);
+  await updateQuickProjectImageForCurrentVisitor({
+    projectId: input.projectId,
+    idea: input.idea,
+    moderationStatus: nextMeta.moderationStatus,
+    moderationReason: nextMeta.moderationReason,
+    publishEligibility: nextMeta.publishEligibility,
+    imageModerationStatus: input.imageModerationStatus ?? nextMeta.imageModerationStatus,
+    lastModeratedAt: nextMeta.lastModeratedAt
+  });
 }
 
 export async function getProjectWithOutputById(projectId: string) {

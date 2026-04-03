@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { moderateQuickGenerationInput } from "@/lib/content-moderation";
 import {
   buildQuickGenerationSummary,
   buildQuickKnowledgePack,
@@ -11,6 +12,8 @@ import {
 } from "@/services/ai-quick-image";
 import {
   getQuickProjectByIdForCurrentVisitor,
+  markQuickProjectModerationBlockedForCurrentVisitor,
+  reviewQuickProjectForPublicPublishForCurrentVisitor,
   updateQuickProjectImageForCurrentVisitor
 } from "@/services/project-service";
 import type {
@@ -213,6 +216,11 @@ function isRetriableImageErrorType(errorType: ImageErrorType) {
   return errorType !== "balance_insufficient" && errorType !== "invalid_parameter";
 }
 
+function isSafetyBlockedImageError(error: unknown) {
+  const raw = error instanceof Error ? error.message : String(error || "");
+  return /(content policy|safety|unsafe|nsfw|sexual|nudity|裸体|裸露|色情)/i.test(raw);
+}
+
 function inferFinalModelAlias(input: {
   requestedAlias: QuickImageAlias;
   usedFallbackToDefault: boolean;
@@ -241,6 +249,28 @@ export async function POST(request: Request) {
     if (!input) {
       return NextResponse.json({ status: "failed", message: "缺少创意输入，无法生成预览图。", retryable: false }, { status: 400 });
     }
+    const inputModeration = moderateQuickGenerationInput(input);
+    if (inputModeration.status === "block") {
+      if (typeof body.quickProjectId === "string" && body.quickProjectId.trim()) {
+        await markQuickProjectModerationBlockedForCurrentVisitor({
+          projectId: body.quickProjectId.trim(),
+          idea: input.idea,
+          reason: inputModeration.reason || "policy_blocked_publish"
+        });
+      }
+      return NextResponse.json(
+        {
+          status: "failed",
+          previewImageUrl: null,
+          message: "这条内容不适合继续生成图片，请换个方向试试。",
+          retryable: false,
+          moderationStatus: "block",
+          publishEligibility: "private_draft",
+          imageModerationStatus: "blocked"
+        },
+        { status: 400 }
+      );
+    }
 
     const summary = buildQuickGenerationSummary(input);
     const knowledge = buildQuickKnowledgePack(summary);
@@ -268,7 +298,8 @@ export async function POST(request: Request) {
         imageStatus: "generating",
         imageLastError: "",
         imageAttemptCount: nextAttemptCount,
-        imageModelAlias: requestedAlias
+        imageModelAlias: requestedAlias,
+        imageModerationStatus: "pending"
       });
     }
 
@@ -378,6 +409,9 @@ export async function POST(request: Request) {
     });
 
     let persistedToProject = false;
+    let reviewResult:
+      | Awaited<ReturnType<typeof reviewQuickProjectForPublicPublishForCurrentVisitor>>
+      | null = null;
     if (quickProjectId) {
       await updateQuickProjectImageForCurrentVisitor({
         projectId: quickProjectId,
@@ -388,6 +422,9 @@ export async function POST(request: Request) {
         imageLastError: "",
         imageAttemptCount: nextAttemptCount,
         imageModelAlias: finalModelAlias
+      });
+      reviewResult = await reviewQuickProjectForPublicPublishForCurrentVisitor({
+        projectId: quickProjectId
       });
       persistedToProject = true;
     }
@@ -400,7 +437,11 @@ export async function POST(request: Request) {
       usedFallbackToDefault,
       usedReferenceImage,
       referenceImageDropped,
-      persistedToProject
+      persistedToProject,
+      moderationStatus: reviewResult?.moderationStatus ?? "allow",
+      moderationReason: reviewResult?.moderationReason ?? "",
+      publishEligibility: reviewResult?.publishEligibility ?? "private_draft",
+      imageModerationStatus: reviewResult?.imageModerationStatus ?? "pending"
     });
   } catch (error) {
     const errorType = classifyImageError(error);
@@ -418,6 +459,9 @@ export async function POST(request: Request) {
     });
 
     if (quickProjectIdForPersist && ideaForPersist) {
+      const moderationReason = isSafetyBlockedImageError(error)
+        ? "image_upstream_safety_block"
+        : undefined;
       await updateQuickProjectImageForCurrentVisitor({
         projectId: quickProjectIdForPersist,
         idea: ideaForPersist,
@@ -426,7 +470,12 @@ export async function POST(request: Request) {
         imageStatus: "failed",
         imageLastError: message,
         imageAttemptCount: nextAttemptCount,
-        imageModelAlias: usedFallbackForLog ? "default" : aliasForLog
+        imageModelAlias: usedFallbackForLog ? "default" : aliasForLog,
+        imageModerationStatus: moderationReason ? "blocked" : "pending",
+        moderationStatus: moderationReason ? "block" : undefined,
+        moderationReason: moderationReason ?? undefined,
+        publishEligibility: moderationReason ? "private_draft" : undefined,
+        lastModeratedAt: moderationReason ? new Date().toISOString() : undefined
       });
     }
 
@@ -438,7 +487,10 @@ export async function POST(request: Request) {
         retryable,
         usedFallbackToDefault: usedFallbackForLog,
         usedReferenceImage: usedReferenceImageForLog,
-        referenceImageDropped: false
+        referenceImageDropped: false,
+        moderationStatus: isSafetyBlockedImageError(error) ? "block" : "allow",
+        publishEligibility: "private_draft",
+        imageModerationStatus: isSafetyBlockedImageError(error) ? "blocked" : "pending"
       },
       { status: 500 }
     );

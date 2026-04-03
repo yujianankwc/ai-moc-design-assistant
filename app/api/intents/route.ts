@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { createIntentForCurrentVisitor, listIntentsForCurrentVisitor } from "@/services/project-service";
+import { getPrivateDraftMessage } from "@/lib/content-moderation";
+import {
+  createIntentForCurrentVisitor,
+  listIntentsForCurrentVisitor,
+  reviewQuickProjectForPublicPublishForCurrentVisitor
+} from "@/services/project-service";
 import type { CreateIntentInput, IntentSourceType } from "@/types/intent";
 
 function shouldFallbackToEmptyIntentList(error: unknown) {
@@ -27,8 +32,40 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "意向单参数不完整，请检查后重试。" }, { status: 400 });
     }
 
+    const isQuickPublish = body.sourceType === "crowdfunding" && body.snapshot?.intentKind === "quick_publish";
+    let publishReview:
+      | Awaited<ReturnType<typeof reviewQuickProjectForPublicPublishForCurrentVisitor>>
+      | null = null;
+
+    if (isQuickPublish && body.projectId?.trim()) {
+      publishReview = await reviewQuickProjectForPublicPublishForCurrentVisitor({
+        projectId: body.projectId.trim(),
+        publishAttemptedAt: new Date().toISOString()
+      });
+      body.snapshot = {
+        ...body.snapshot,
+        uiContext: {
+          ...(body.snapshot?.uiContext ?? {}),
+          publishEligibility: publishReview.publishEligibility,
+          moderationStatus: publishReview.moderationStatus,
+          moderationReason: publishReview.moderationReason,
+          imageModerationStatus: publishReview.imageModerationStatus
+        }
+      };
+    }
+
     const created = await createIntentForCurrentVisitor(body);
-    return NextResponse.json({ intentId: created.id, status: created.status, createdAt: created.created_at });
+    return NextResponse.json({
+      intentId: created.id,
+      status: created.status,
+      createdAt: created.created_at,
+      privateDraft: publishReview?.publishEligibility === "private_draft",
+      message: publishReview?.publishEligibility === "private_draft" ? getPrivateDraftMessage() : "这条方向已经发出来了。",
+      publishEligibility: publishReview?.publishEligibility ?? "public",
+      moderationStatus: publishReview?.moderationStatus ?? "allow",
+      moderationReason: publishReview?.moderationReason ?? "",
+      imageModerationStatus: publishReview?.imageModerationStatus ?? "approved"
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : "意向单提交失败";
     return NextResponse.json({ error: message }, { status: 500 });

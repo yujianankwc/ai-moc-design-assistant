@@ -10,7 +10,11 @@ import {
   mapProjectWithIntentToUnifiedStage
 } from "@/lib/project-language";
 import { mapProjectCategoryToShowcaseCategory } from "@/lib/showcase-category";
-import { getQuickProjectPreviewImageUrl, listProjectsForCurrentVisitor } from "@/services/project-service";
+import {
+  getQuickProjectPreviewImageUrl,
+  isQuickProjectPubliclyVisible,
+  listProjectsForCurrentVisitor
+} from "@/services/project-service";
 import type { ProjectRow } from "@/types/project";
 
 type LandingCardItem = {
@@ -36,6 +40,7 @@ function mapRealProjectToLandingCard(project: ProjectRow): LandingCardItem | nul
   if (project.linked_intent?.source_type !== "crowdfunding") return null;
   const showcaseControl = project.linked_intent.showcase_control;
   if (showcaseControl?.paused) return null;
+  if (!isQuickProjectPubliclyVisible(project.notes_for_factory)) return null;
 
   const judgement = mapIntentSourceTypeToJudgement(project.linked_intent.source_type);
   const spotlightLabel = showcaseControl?.homepage

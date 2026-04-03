@@ -8,6 +8,7 @@ import {
   mapProjectWithIntentToUnifiedStage
 } from "@/lib/project-language";
 import {
+  getQuickProjectModerationMeta,
   getQuickProjectImageMeta,
   getQuickProjectPreviewImageUrl,
   listIntentsForCurrentVisitor,
@@ -34,6 +35,7 @@ type ProjectCardItem = {
   currentIntentStatus?: string | null;
   intentSourceType?: string | null;
   imageUrl?: string | null;
+  visibilityLabel?: string | null;
   coverAccentClass: string;
   priorityScore: number;
 };
@@ -74,6 +76,7 @@ function isQuickProject(category: string | null | undefined) {
 function mapProjectRowToCard(item: ProjectRow): ProjectCardItem {
   const quick = isQuickProject(item.category);
   const imageMeta = getQuickProjectImageMeta(item.notes_for_factory);
+  const moderationMeta = getQuickProjectModerationMeta(item.notes_for_factory);
   const hasImage = quickProjectHasImage(item.notes_for_factory);
   const previewImageUrl = getQuickProjectPreviewImageUrl(item.notes_for_factory);
   const linkedIntent = item.linked_intent;
@@ -84,29 +87,36 @@ function mapProjectRowToCard(item: ProjectRow): ProjectCardItem {
   });
 
   if (linkedIntent) {
+    const isPrivateDraft = linkedIntent.source_type === "crowdfunding" && moderationMeta.publishEligibility !== "public";
     return {
       id: item.id,
       name: clampTitle(item.title || "未命名项目"),
       projectType: quick ? "轻量创意" : "完整方案",
       visualCategory: mapProjectCategoryToShowcaseCategory(item.category),
       stage: linkedStage,
-      nextSuggestion: inferIntentNextSuggestion({
-        sourceType: linkedIntent.source_type,
-        status: linkedIntent.status
-      }),
+      nextSuggestion:
+        isPrivateDraft
+          ? "先调整后再公开"
+          : inferIntentNextSuggestion({
+              sourceType: linkedIntent.source_type,
+              status: linkedIntent.status
+            }),
       updatedAtLabel: formatDate(linkedIntent.updated_at || item.updated_at),
       sortAt: linkedIntent.updated_at || item.updated_at,
       viewHref: `/projects/${item.id}`,
       currentIntentStatus: linkedIntent.status,
       intentSourceType: linkedIntent.source_type,
       imageUrl: previewImageUrl,
+      visibilityLabel: isPrivateDraft ? "仅自己可见" : linkedIntent.source_type === "crowdfunding" ? "已公开展示" : null,
       coverAccentClass:
-        linkedIntent.source_type === "crowdfunding"
+        isPrivateDraft
+          ? "text-slate-800"
+          : linkedIntent.source_type === "crowdfunding"
           ? "text-violet-800"
           : linkedIntent.source_type === "small_batch"
             ? "text-emerald-800"
             : "text-blue-800",
-      priorityScore: linkedIntent.source_type === "crowdfunding" ? 92 : 84
+      priorityScore: isPrivateDraft ? 72 : linkedIntent.source_type === "crowdfunding" ? 92 : 84
     };
   }
 
@@ -119,13 +129,26 @@ function mapProjectRowToCard(item: ProjectRow): ProjectCardItem {
       projectType: "轻量创意",
       visualCategory: mapProjectCategoryToShowcaseCategory(item.category),
       stage: linkedStage,
-      nextSuggestion: hasImage ? "发出来看看" : isImageGenerating ? "稍后回来看看" : isImageFailed ? "重新生成预览图" : "继续补一张方向图",
+      nextSuggestion:
+        moderationMeta.publishEligibility === "private_draft" && moderationMeta.imageModerationStatus === "blocked"
+          ? "先调整后再公开"
+          : hasImage
+            ? "发出来看看"
+            : isImageGenerating
+              ? "稍后回来看看"
+              : isImageFailed
+                ? "重新生成预览图"
+                : "继续补一张方向图",
       updatedAtLabel: formatDate(item.updated_at),
       sortAt: item.updated_at,
       viewHref: `/quick/result?quickProjectId=${item.id}`,
       currentIntentStatus: null,
       intentSourceType: null,
       imageUrl: previewImageUrl,
+      visibilityLabel:
+        moderationMeta.publishEligibility === "private_draft" && moderationMeta.lastModeratedAt
+          ? "仅自己可见"
+          : null,
       coverAccentClass: hasImage ? "text-amber-800" : "text-slate-700",
       priorityScore: hasImage ? 80 : 68
     };
@@ -369,8 +392,14 @@ export default async function ProjectsPage({
                 <div className="relative z-10 flex flex-wrap items-center gap-2">
                   <span className="rounded-full bg-white/90 px-3 py-1 text-xs font-bold text-slate-700">{project.projectType}</span>
                   <span className="rounded-full bg-slate-900/85 px-3 py-1 text-xs font-bold text-white">{project.stage}</span>
-                  {project.intentSourceType === "crowdfunding" ? (
-                    <span className="rounded-full bg-violet-700/90 px-3 py-1 text-xs font-bold text-white">已发出来</span>
+                  {project.visibilityLabel ? (
+                    <span
+                      className={`rounded-full px-3 py-1 text-xs font-bold text-white ${
+                        project.visibilityLabel === "仅自己可见" ? "bg-slate-700/90" : "bg-violet-700/90"
+                      }`}
+                    >
+                      {project.visibilityLabel}
+                    </span>
                   ) : null}
                 </div>
                 <p className={`relative z-10 mt-8 max-w-[18rem] text-base font-black leading-7 ${project.coverAccentClass}`}>

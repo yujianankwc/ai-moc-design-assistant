@@ -11,7 +11,11 @@ import {
   mapProjectWithIntentToUnifiedStage
 } from "@/lib/project-language";
 import { mapProjectCategoryToShowcaseCategory, SHOWCASE_CATEGORY_FILTERS } from "@/lib/showcase-category";
-import { getQuickProjectPreviewImageUrl, listProjectsForCurrentVisitor } from "@/services/project-service";
+import {
+  getQuickProjectPreviewImageUrl,
+  isQuickProjectPubliclyVisible,
+  listProjectsForCurrentVisitor
+} from "@/services/project-service";
 import type { ProjectRow } from "@/types/project";
 
 const categories: Array<ShowcaseCategory | "全部"> = SHOWCASE_CATEGORY_FILTERS;
@@ -40,6 +44,7 @@ function mapRealProjectToShowcaseCard(item: ProjectRow): ShowcaseCardItem | null
   if (item.linked_intent?.source_type !== "crowdfunding") return null;
   const showcaseControl = item.linked_intent.showcase_control;
   if (showcaseControl?.paused) return null;
+  if (!isQuickProjectPubliclyVisible(item.notes_for_factory)) return null;
   const category = mapProjectCategoryToShowcaseCategory(item.category);
   const judgement = mapIntentSourceTypeToJudgement(item.linked_intent.source_type);
   const latestOrder = new Date(item.linked_intent.updated_at).getTime();

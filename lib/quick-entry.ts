@@ -6,7 +6,11 @@ import type {
   QuickDirection,
   QuickEntryInput,
   QuickImageModelAlias,
+  QuickImageModerationStatus,
   QuickImageStatus,
+  QuickModerationReason,
+  QuickModerationStatus,
+  QuickPublishEligibility,
   QuickEntryResult,
   QuickPath,
   QuickScalePreference,
@@ -414,6 +418,12 @@ export function saveQuickAIResultToSession(input: {
   imageUpdatedAt?: string | null;
   imageAttemptCount?: number;
   imageModelAlias?: QuickImageModelAlias | null;
+  moderationStatus?: QuickModerationStatus;
+  moderationReason?: QuickModerationReason | "";
+  publishEligibility?: QuickPublishEligibility;
+  imageModerationStatus?: QuickImageModerationStatus;
+  lastModeratedAt?: string | null;
+  publishAttemptedAt?: string | null;
 }) {
   if (typeof window === "undefined") return;
   window.sessionStorage.setItem(
@@ -428,6 +438,12 @@ export function saveQuickAIResultToSession(input: {
       imageUpdatedAt: input.imageUpdatedAt ?? null,
       imageAttemptCount: input.imageAttemptCount ?? 0,
       imageModelAlias: input.imageModelAlias ?? null,
+      moderationStatus: input.moderationStatus ?? "allow",
+      moderationReason: input.moderationReason ?? "",
+      publishEligibility: input.publishEligibility ?? "private_draft",
+      imageModerationStatus: input.imageModerationStatus ?? (input.previewImageUrl ? "approved" : "pending"),
+      lastModeratedAt: input.lastModeratedAt ?? null,
+      publishAttemptedAt: input.publishAttemptedAt ?? null,
       saved_at: new Date().toISOString()
     })
   );
@@ -442,6 +458,12 @@ export function updateQuickAIImageInSession(input: {
   imageUpdatedAt?: string | null;
   imageAttemptCount?: number;
   imageModelAlias?: QuickImageModelAlias | null;
+  moderationStatus?: QuickModerationStatus;
+  moderationReason?: QuickModerationReason | "";
+  publishEligibility?: QuickPublishEligibility;
+  imageModerationStatus?: QuickImageModerationStatus;
+  lastModeratedAt?: string | null;
+  publishAttemptedAt?: string | null;
 }) {
   if (typeof window === "undefined") return;
   const raw = window.sessionStorage.getItem(QUICK_AI_RESULT_SESSION_KEY);
@@ -457,6 +479,12 @@ export function updateQuickAIImageInSession(input: {
       imageUpdatedAt?: string | null;
       imageAttemptCount?: number;
       imageModelAlias?: QuickImageModelAlias | null;
+      moderationStatus?: QuickModerationStatus;
+      moderationReason?: QuickModerationReason | "";
+      publishEligibility?: QuickPublishEligibility;
+      imageModerationStatus?: QuickImageModerationStatus;
+      lastModeratedAt?: string | null;
+      publishAttemptedAt?: string | null;
       saved_at?: string;
     };
     if (!parsed.input || !parsed.result) return;
@@ -482,6 +510,15 @@ export function updateQuickAIImageInSession(input: {
         imageUpdatedAt: input.imageUpdatedAt ?? parsed.imageUpdatedAt ?? null,
         imageAttemptCount: input.imageAttemptCount ?? parsed.imageAttemptCount ?? 0,
         imageModelAlias: input.imageModelAlias ?? parsed.imageModelAlias ?? null,
+        moderationStatus: input.moderationStatus ?? parsed.moderationStatus ?? "allow",
+        moderationReason: input.moderationReason ?? parsed.moderationReason ?? "",
+        publishEligibility: input.publishEligibility ?? parsed.publishEligibility ?? "private_draft",
+        imageModerationStatus:
+          input.imageModerationStatus ??
+          parsed.imageModerationStatus ??
+          (nextPreviewImageUrl ? "approved" : "pending"),
+        lastModeratedAt: input.lastModeratedAt ?? parsed.lastModeratedAt ?? null,
+        publishAttemptedAt: input.publishAttemptedAt ?? parsed.publishAttemptedAt ?? null,
         saved_at: new Date().toISOString()
       })
     );
@@ -501,6 +538,12 @@ export function readQuickAIResultFromSession():
       imageUpdatedAt: string | null;
       imageAttemptCount: number;
       imageModelAlias: QuickImageModelAlias | null;
+      moderationStatus: QuickModerationStatus;
+      moderationReason: QuickModerationReason | "";
+      publishEligibility: QuickPublishEligibility;
+      imageModerationStatus: QuickImageModerationStatus;
+      lastModeratedAt: string | null;
+      publishAttemptedAt: string | null;
       saved_at: string;
     }
   | null {
@@ -518,6 +561,12 @@ export function readQuickAIResultFromSession():
       imageUpdatedAt?: string | null;
       imageAttemptCount?: number;
       imageModelAlias?: QuickImageModelAlias | null;
+      moderationStatus?: QuickModerationStatus;
+      moderationReason?: QuickModerationReason | "";
+      publishEligibility?: QuickPublishEligibility;
+      imageModerationStatus?: QuickImageModerationStatus;
+      lastModeratedAt?: string | null;
+      publishAttemptedAt?: string | null;
       saved_at?: string;
     };
     if (!parsed.input || !parsed.result) return null;
@@ -538,6 +587,18 @@ export function readQuickAIResultFromSession():
         parsed.imageModelAlias === "nano_banana"
           ? parsed.imageModelAlias
           : null,
+      moderationStatus: parsed.moderationStatus === "block" ? "block" : "allow",
+      moderationReason:
+        typeof parsed.moderationReason === "string" ? (parsed.moderationReason as QuickModerationReason | "") : "",
+      publishEligibility: parsed.publishEligibility === "public" ? "public" : "private_draft",
+      imageModerationStatus:
+        parsed.imageModerationStatus === "approved"
+          ? "approved"
+          : parsed.imageModerationStatus === "blocked"
+            ? "blocked"
+            : "pending",
+      lastModeratedAt: typeof parsed.lastModeratedAt === "string" ? parsed.lastModeratedAt : null,
+      publishAttemptedAt: typeof parsed.publishAttemptedAt === "string" ? parsed.publishAttemptedAt : null,
       saved_at: parsed.saved_at ?? ""
     };
   } catch {

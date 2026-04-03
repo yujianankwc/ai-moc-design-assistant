@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getBlockedGenerationMessage, moderateQuickGeneratedCopy, moderateQuickGenerationInput } from "@/lib/content-moderation";
 import {
   createQuickProjectForCurrentVisitor,
   updateQuickProjectResultForCurrentVisitor
@@ -52,6 +53,10 @@ export async function POST(request: Request) {
     if (!input) {
       return NextResponse.json({ error: "请输入一句话创意。" }, { status: 400 });
     }
+    const inputModeration = moderateQuickGenerationInput(input);
+    if (inputModeration.status === "block") {
+      return NextResponse.json({ error: getBlockedGenerationMessage() }, { status: 400 });
+    }
 
     const summary = buildQuickGenerationSummary(input);
     const knowledge = buildQuickKnowledgePack(summary);
@@ -92,6 +97,13 @@ export async function POST(request: Request) {
 
     const quickProjectId = typeof body.quickProjectId === "string" ? body.quickProjectId.trim() : "";
     const regenerateToken = typeof body.regenerateToken === "string" ? body.regenerateToken : "";
+    const outputModeration = moderateQuickGeneratedCopy({
+      quickInput: input,
+      quickResult: result
+    });
+    if (outputModeration.status === "block") {
+      return NextResponse.json({ error: getBlockedGenerationMessage() }, { status: 400 });
+    }
     const createdQuickProject = quickProjectId
       ? await updateQuickProjectResultForCurrentVisitor({
           projectId: quickProjectId,

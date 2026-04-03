@@ -15,6 +15,27 @@ export type QuickImageStatus = (typeof QUICK_IMAGE_STATUS_OPTIONS)[number];
 export const QUICK_IMAGE_MODEL_ALIAS_OPTIONS = ["default", "nano_banner", "nano_banana"] as const;
 export type QuickImageModelAlias = (typeof QUICK_IMAGE_MODEL_ALIAS_OPTIONS)[number];
 
+export const QUICK_MODERATION_STATUS_OPTIONS = ["allow", "block"] as const;
+export type QuickModerationStatus = (typeof QUICK_MODERATION_STATUS_OPTIONS)[number];
+
+export const QUICK_PUBLISH_ELIGIBILITY_OPTIONS = ["public", "private_draft"] as const;
+export type QuickPublishEligibility = (typeof QUICK_PUBLISH_ELIGIBILITY_OPTIONS)[number];
+
+export const QUICK_IMAGE_MODERATION_STATUS_OPTIONS = ["pending", "approved", "blocked"] as const;
+export type QuickImageModerationStatus = (typeof QUICK_IMAGE_MODERATION_STATUS_OPTIONS)[number];
+
+export const QUICK_MODERATION_REASON_OPTIONS = [
+  "sexual_content",
+  "minor_risk",
+  "explicit_nudity",
+  "unsafe_reference_image",
+  "policy_blocked_publish",
+  "image_required_for_public_publish",
+  "image_review_unavailable",
+  "image_upstream_safety_block"
+] as const;
+export type QuickModerationReason = (typeof QUICK_MODERATION_REASON_OPTIONS)[number];
+
 export type QuickEntryInput = {
   idea: string;
   direction: QuickDirection | "";
@@ -31,4 +52,13 @@ export type QuickEntryResult = {
   recommendedFit: string;
   recommendedReason: string;
   suggestedPath: QuickPath;
+};
+
+export type QuickModerationMeta = {
+  moderationStatus: QuickModerationStatus;
+  moderationReason: QuickModerationReason | "";
+  publishEligibility: QuickPublishEligibility;
+  imageModerationStatus: QuickImageModerationStatus;
+  lastModeratedAt: string | null;
+  publishAttemptedAt?: string | null;
 };

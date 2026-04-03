@@ -14,9 +14,13 @@ import { buildQuickPathHref } from "@/lib/quick-path-context";
 import type {
   QuickDirection,
   QuickEntryInput,
+  QuickImageModerationStatus,
   QuickImageModelAlias,
   QuickImageStatus,
+  QuickModerationReason,
+  QuickModerationStatus,
   QuickPath,
+  QuickPublishEligibility,
   QuickScalePreference,
   QuickStyle
 } from "@/types/quick-entry";
@@ -54,6 +58,12 @@ type QuickProjectImageSnapshot = {
   imageLastError: string;
   imageAttemptCount: number;
   imageModelAlias: QuickImageModelAlias | null;
+  moderationStatus: QuickModerationStatus;
+  moderationReason: QuickModerationReason | "";
+  publishEligibility: QuickPublishEligibility;
+  imageModerationStatus: QuickImageModerationStatus;
+  lastModeratedAt: string | null;
+  publishAttemptedAt: string | null;
 };
 
 function wasAutoImageRequestedRecently(key: string) {
@@ -156,6 +166,10 @@ export default function QuickEntryResultPage() {
   const [imageUpdatedAt, setImageUpdatedAt] = useState<string | null>(null);
   const [imageAttemptCount, setImageAttemptCount] = useState(0);
   const [, setImageModelAlias] = useState<QuickImageModelAlias | null>(null);
+  const [moderationStatus, setModerationStatus] = useState<QuickModerationStatus>("allow");
+  const [moderationReason, setModerationReason] = useState<QuickModerationReason | "">("");
+  const [publishEligibility, setPublishEligibility] = useState<QuickPublishEligibility>("private_draft");
+  const [imageModerationStatus, setImageModerationStatus] = useState<QuickImageModerationStatus>("pending");
   const [imageInfoHint, setImageInfoHint] = useState("");
   const [resultState, setResultState] = useState<"idle" | "generating" | "failed">("idle");
   const [quickProjectId, setQuickProjectId] = useState(quickProjectIdFromQuery);
@@ -248,6 +262,10 @@ export default function QuickEntryResultPage() {
     setImageUpdatedAt(snapshot.imageUpdatedAt ?? null);
     setImageAttemptCount(snapshot.imageAttemptCount ?? 0);
     setImageModelAlias(snapshot.imageModelAlias ?? null);
+    setModerationStatus(snapshot.moderationStatus ?? "allow");
+    setModerationReason(snapshot.moderationReason ?? "");
+    setPublishEligibility(snapshot.publishEligibility ?? "private_draft");
+    setImageModerationStatus(snapshot.imageModerationStatus ?? "pending");
   }, []);
 
   useEffect(() => {
@@ -274,6 +292,12 @@ export default function QuickEntryResultPage() {
                 imageLastError: string;
                 imageAttemptCount: number;
                 imageModelAlias: QuickImageModelAlias | null;
+                moderationStatus: QuickModerationStatus;
+                moderationReason: QuickModerationReason | "";
+                publishEligibility: QuickPublishEligibility;
+                imageModerationStatus: QuickImageModerationStatus;
+                lastModeratedAt: string | null;
+                publishAttemptedAt: string | null;
               };
               error?: string;
             }
@@ -424,7 +448,13 @@ export default function QuickEntryResultPage() {
       imageLastError: aiSession?.imageLastError ?? "",
       imageUpdatedAt: aiSession?.imageUpdatedAt ?? null,
       imageAttemptCount: aiSession?.imageAttemptCount ?? 0,
-      imageModelAlias: aiSession?.imageModelAlias ?? null
+      imageModelAlias: aiSession?.imageModelAlias ?? null,
+      moderationStatus: aiSession?.moderationStatus ?? "allow",
+      moderationReason: aiSession?.moderationReason ?? "",
+      publishEligibility: aiSession?.publishEligibility ?? "private_draft",
+      imageModerationStatus: aiSession?.imageModerationStatus ?? "pending",
+      lastModeratedAt: aiSession?.lastModeratedAt ?? null,
+      publishAttemptedAt: aiSession?.publishAttemptedAt ?? null
     });
     setImageInfoHint("");
   }, [aiSession, previewImageUrl, syncImageSnapshot]);
@@ -489,7 +519,13 @@ export default function QuickEntryResultPage() {
             imageLastError: nextSnapshot.imageLastError,
             imageUpdatedAt: nextSnapshot.imageUpdatedAt,
             imageAttemptCount: nextSnapshot.imageAttemptCount,
-            imageModelAlias: nextSnapshot.imageModelAlias
+            imageModelAlias: nextSnapshot.imageModelAlias,
+            moderationStatus: nextSnapshot.moderationStatus,
+            moderationReason: nextSnapshot.moderationReason,
+            publishEligibility: nextSnapshot.publishEligibility,
+            imageModerationStatus: nextSnapshot.imageModerationStatus,
+            lastModeratedAt: nextSnapshot.lastModeratedAt,
+            publishAttemptedAt: nextSnapshot.publishAttemptedAt
           });
         } else if (nextSnapshot.imageStatus === "failed") {
           updateQuickAIImageInSession({
@@ -499,7 +535,13 @@ export default function QuickEntryResultPage() {
             imageLastError: nextSnapshot.imageLastError,
             imageUpdatedAt: nextSnapshot.imageUpdatedAt,
             imageAttemptCount: nextSnapshot.imageAttemptCount,
-            imageModelAlias: nextSnapshot.imageModelAlias
+            imageModelAlias: nextSnapshot.imageModelAlias,
+            moderationStatus: nextSnapshot.moderationStatus,
+            moderationReason: nextSnapshot.moderationReason,
+            publishEligibility: nextSnapshot.publishEligibility,
+            imageModerationStatus: nextSnapshot.imageModerationStatus,
+            lastModeratedAt: nextSnapshot.lastModeratedAt,
+            publishAttemptedAt: nextSnapshot.publishAttemptedAt
           });
         }
       } catch {
@@ -560,6 +602,10 @@ export default function QuickEntryResultPage() {
               referenceImageDropped?: boolean;
               persistedToProject?: boolean;
               retryable?: boolean;
+              moderationStatus?: QuickModerationStatus;
+              moderationReason?: QuickModerationReason | "";
+              publishEligibility?: QuickPublishEligibility;
+              imageModerationStatus?: QuickImageModerationStatus;
             }
           | null;
         if (requestSeq !== imageRequestSeqRef.current) return;
@@ -571,13 +617,21 @@ export default function QuickEntryResultPage() {
           setImageUpdatedAt(new Date().toISOString());
           setImageInfoHint("");
           setImageProgress(100);
+          setModerationStatus(data?.moderationStatus ?? "allow");
+          setModerationReason(data?.moderationReason ?? "");
+          setPublishEligibility(data?.publishEligibility ?? "private_draft");
+          setImageModerationStatus(data?.imageModerationStatus ?? "pending");
           updateQuickAIImageInSession({
             idea: targetInput.idea,
             imageWarning: failedMessage,
             imageStatus: "failed",
             imageLastError: failedMessage,
             imageUpdatedAt: new Date().toISOString(),
-            imageAttemptCount: nextAttempt
+            imageAttemptCount: nextAttempt,
+            moderationStatus: data?.moderationStatus ?? "allow",
+            moderationReason: data?.moderationReason ?? "",
+            publishEligibility: data?.publishEligibility ?? "private_draft",
+            imageModerationStatus: data?.imageModerationStatus ?? "pending"
           });
           return;
         }
@@ -587,6 +641,10 @@ export default function QuickEntryResultPage() {
         setImageProgress(100);
         setImageUpdatedAt(new Date().toISOString());
         setReferenceImageWasDropped(Boolean(data.referenceImageDropped));
+        setModerationStatus(data.moderationStatus ?? "allow");
+        setModerationReason(data.moderationReason ?? "");
+        setPublishEligibility(data.publishEligibility ?? "private_draft");
+        setImageModerationStatus(data.imageModerationStatus ?? "pending");
         const messageParts: string[] = [];
         if (data.referenceImageDropped) {
           messageParts.push("排队的人有点多，换了一位设计师帮你，参考图这次暂未用上。");
@@ -604,7 +662,11 @@ export default function QuickEntryResultPage() {
           imageStatus: "succeeded",
           imageLastError: "",
           imageUpdatedAt: new Date().toISOString(),
-          imageAttemptCount: nextAttempt
+          imageAttemptCount: nextAttempt,
+          moderationStatus: data.moderationStatus ?? "allow",
+          moderationReason: data.moderationReason ?? "",
+          publishEligibility: data.publishEligibility ?? "private_draft",
+          imageModerationStatus: data.imageModerationStatus ?? "pending"
         });
       } catch (error) {
         if (requestSeq !== imageRequestSeqRef.current) return;
@@ -620,13 +682,17 @@ export default function QuickEntryResultPage() {
         setImageUpdatedAt(new Date().toISOString());
         setImageInfoHint("");
         setImageProgress(100);
+        setPublishEligibility("private_draft");
+        setImageModerationStatus("pending");
         updateQuickAIImageInSession({
           idea: targetInput.idea,
           imageWarning: message,
           imageStatus: "failed",
           imageLastError: message,
           imageUpdatedAt: new Date().toISOString(),
-          imageAttemptCount: nextAttempt
+          imageAttemptCount: nextAttempt,
+          publishEligibility: "private_draft",
+          imageModerationStatus: "pending"
         });
       }
     },
@@ -691,6 +757,8 @@ export default function QuickEntryResultPage() {
 
   const isLoading = source === "ai" && !resolvedResult;
   const primaryCtaLabel = "发布出来看看";
+  const canPublishPublicly = publishEligibility === "public" && imageModerationStatus === "approved";
+  const computedPrimaryCtaLabel = canPublishPublicly ? primaryCtaLabel : "先保存为私密草稿";
   const isImageGenerating = (imageStatus === "queued" || imageStatus === "generating") && !imageUrl;
   const hasTimedOutWaiting = isImageGenerating && imageElapsedSeconds >= IMAGE_RETRY_SECONDS;
   const shouldShowFailedCard = (!imageUrl && imageStatus === "failed") || hasTimedOutWaiting;
@@ -788,8 +856,13 @@ export default function QuickEntryResultPage() {
             <div className="mt-6">
               <div className="rounded-[24px] border border-amber-200/70 bg-[linear-gradient(180deg,rgba(255,248,220,0.88),rgba(255,255,255,0.9))] p-5 shadow-[0_22px_40px_-34px_rgba(217,119,6,0.3)]">
                 <p className="text-xs font-bold text-slate-400">现在最适合</p>
-                <p className="mt-3 text-base font-bold leading-7 text-amber-900">{primaryCtaLabel}</p>
+                <p className="mt-3 text-base font-bold leading-7 text-amber-900">{computedPrimaryCtaLabel}</p>
                 <p className="mt-2 text-sm text-slate-500">{displayTopJudgement}</p>
+                {!canPublishPublicly ? (
+                  <p className="mt-2 text-xs font-medium text-slate-500">
+                    这条内容现在会先保存为仅自己可见，调一调再公开会更稳妥。
+                  </p>
+                ) : null}
               </div>
             </div>
           </>
@@ -997,19 +1070,27 @@ export default function QuickEntryResultPage() {
 
       <section className="page-section bg-[linear-gradient(180deg,rgba(255,248,220,0.48),rgba(255,255,255,0.84))]">
         <h2 className="section-title">你现在点哪个按钮</h2>
-        <p className="section-copy mt-2">先发出来看看，再看大家会不会支持它继续往下做。</p>
+        <p className="section-copy mt-2">
+          {canPublishPublicly ? "先发出来看看，再看大家会不会支持它继续往下做。" : "这条内容会先保存成私密草稿，等调整后再公开更稳妥。"}
+        </p>
         <div className="mt-5 space-y-4">
           <div className="rounded-[30px] border border-amber-200/80 bg-[linear-gradient(180deg,rgba(255,248,220,0.92),rgba(255,255,255,0.9))] p-6 shadow-[0_24px_50px_-36px_rgba(217,119,6,0.3)]">
             <p className="text-xs font-bold text-amber-700">推荐先点这个</p>
-            <p className="mt-3 text-3xl font-black tracking-tight text-slate-900">{primaryCtaLabel}</p>
-            <p className="mt-2 text-sm text-slate-500">先把这个方向发出来，后面再慢慢补资料、看投票和购买反馈。</p>
+            <p className="mt-3 text-3xl font-black tracking-tight text-slate-900">{computedPrimaryCtaLabel}</p>
+            <p className="mt-2 text-sm text-slate-500">
+              {canPublishPublicly
+                ? "先把这个方向发出来，后面再慢慢补资料、看投票和购买反馈。"
+                : moderationReason
+                  ? "系统判断这条内容暂时不适合直接公开，会先保存在你自己的列表里。"
+                  : "没有通过公开前检查时，会先保存在你自己的列表里。"}
+            </p>
             <button
               type="button"
               onClick={() => goQuickPath("creator_plan")}
               disabled={isLoading || resultState === "generating"}
               className="primary-cta mt-5 w-full text-base disabled:pointer-events-none disabled:opacity-60"
             >
-              {primaryCtaLabel}
+              {computedPrimaryCtaLabel}
             </button>
           </div>
           <button

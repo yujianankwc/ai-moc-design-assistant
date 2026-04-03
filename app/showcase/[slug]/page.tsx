@@ -23,6 +23,7 @@ import { mapProjectCategoryToShowcaseCategory } from "@/lib/showcase-category";
 import {
   getQuickProjectPreviewImageUrl,
   getProjectWithOutputById,
+  getQuickProjectModerationMeta,
   getShowcaseInteractionSummary,
   SYSTEM_FALLBACK_MARKER
 } from "@/services/project-service";
@@ -84,6 +85,10 @@ async function getDetailModel(slug: string): Promise<DetailModel | null> {
 
   const detail = await getProjectWithOutputById(slug).catch(() => null);
   if (!detail?.project?.linked_intent || detail.project.linked_intent.source_type !== "crowdfunding") {
+    return null;
+  }
+  const moderationMeta = getQuickProjectModerationMeta(detail.project.notes_for_factory);
+  if (moderationMeta.publishEligibility !== "public" || moderationMeta.imageModerationStatus !== "approved") {
     return null;
   }
 

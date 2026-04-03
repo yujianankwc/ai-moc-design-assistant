@@ -18,6 +18,7 @@ export default function QuickCreatorPlanPage() {
   const pathname = usePathname();
   const [rawSearch, setRawSearch] = useState("");
   const [submittedIntentId, setSubmittedIntentId] = useState("");
+  const [savedAsPrivateDraft, setSavedAsPrivateDraft] = useState(false);
   const [isLaunching, setIsLaunching] = useState(false);
   const [isSavingSupplement, setIsSavingSupplement] = useState(false);
   const [feedback, setFeedback] = useState("");
@@ -86,10 +87,18 @@ export default function QuickCreatorPlanPage() {
           }
         })
       });
-      const data = (await response.json().catch(() => null)) as { intentId?: string; error?: string } | null;
+      const data = (await response.json().catch(() => null)) as
+        | {
+            intentId?: string;
+            error?: string;
+            privateDraft?: boolean;
+            message?: string;
+          }
+        | null;
       if (!response.ok) throw new Error(data?.error || "这条公开内容暂时没有发出来，请稍后重试。");
       setSubmittedIntentId(data?.intentId || "");
-      setFeedback("这条方向已经发出来了。");
+      setSavedAsPrivateDraft(Boolean(data?.privateDraft));
+      setFeedback(data?.message || "这条方向已经发出来了。");
       clearAutostartQuery();
     } catch (error) {
       const message = error instanceof Error ? error.message : "这条公开内容暂时没有发出来，请稍后重试。";
@@ -187,11 +196,19 @@ export default function QuickCreatorPlanPage() {
     <section className="mx-auto max-w-4xl space-y-4 sm:space-y-5">
       <QuickSuccessCard
         mode="compact"
-        title="这条方向已经发出来了"
-        summary="现在先让大家看到它、给它投票，再慢慢决定要不要继续量产。"
-        stageLabel="公开展示中"
-        nextSuggestion="先去看看大家会不会支持它"
-        footerHint="这一步是先发出来收集反馈，不用一开始就把资料全部填完。"
+        title={savedAsPrivateDraft ? "这条方向已先保存为私密草稿" : "这条方向已经发出来了"}
+        summary={
+          savedAsPrivateDraft
+            ? "这条内容已先保存为仅自己可见，等你调整方向或补一张更稳妥的图后，再公开也来得及。"
+            : "现在先让大家看到它、给它投票，再慢慢决定要不要继续量产。"
+        }
+        stageLabel={savedAsPrivateDraft ? "仅自己可见" : "公开展示中"}
+        nextSuggestion={savedAsPrivateDraft ? "先调整一下，再决定要不要公开" : "先去看看大家会不会支持它"}
+        footerHint={
+          savedAsPrivateDraft
+            ? "这一步先帮你把记录保住了，但还不会进入公开广场。"
+            : "这一步是先发出来收集反馈，不用一开始就把资料全部填完。"
+        }
         items={[
           { label: "当前目标", value: `${targetPeople} 人` },
           { label: "现在更适合", value: unlockText }
@@ -199,16 +216,16 @@ export default function QuickCreatorPlanPage() {
         actions={
           <>
             <Link
-              href={context.projectId ? `/showcase/${context.projectId}` : "/showcase"}
+              href={savedAsPrivateDraft ? buildQuickResultHref(context) : context.projectId ? `/showcase/${context.projectId}` : "/showcase"}
               className="rounded-md bg-amber-500 px-4 py-2 text-sm font-medium text-amber-950 hover:bg-amber-400"
             >
-              去看公开页
+              {savedAsPrivateDraft ? "回去继续调整" : "去看公开页"}
             </Link>
             <Link
-              href="/projects?tab=published"
+              href={savedAsPrivateDraft ? "/projects" : "/projects?tab=published"}
               className="rounded-md border border-amber-300 bg-white px-4 py-2 text-sm text-amber-800 hover:bg-amber-100"
             >
-              去我的发布
+              {savedAsPrivateDraft ? "去我的创意" : "去我的发布"}
             </Link>
           </>
         }

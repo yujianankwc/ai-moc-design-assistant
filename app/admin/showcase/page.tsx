@@ -8,6 +8,7 @@ import {
   mapProjectWithIntentToUnifiedStage
 } from "@/lib/project-language";
 import {
+  getQuickProjectModerationMeta,
   getShowcaseInteractionStatsByProjectIds,
   listProjectsByDemoUser
 } from "@/services/project-service";
@@ -36,6 +37,8 @@ type ShowcaseOpsCard = {
   watchers: number;
   latestInteractionAt: string | null;
   linkedIntentId: string;
+  moderationLabel: string;
+  moderationReason: string;
 };
 
 function mapProjectToShowcaseOpsCard(
@@ -44,6 +47,7 @@ function mapProjectToShowcaseOpsCard(
 ): ShowcaseOpsCard | null {
   const linkedIntent = project.linked_intent;
   if (!linkedIntent || linkedIntent.source_type !== "crowdfunding") return null;
+  const moderationMeta = getQuickProjectModerationMeta(project.notes_for_factory);
   const stats = interactionStats[project.id] || {
     likes: 0,
     watchers: 0,
@@ -76,7 +80,12 @@ function mapProjectToShowcaseOpsCard(
     likes: stats.likes,
     watchers: stats.watchers,
     latestInteractionAt: stats.latestInteractionAt,
-    linkedIntentId: linkedIntent.id
+    linkedIntentId: linkedIntent.id,
+    moderationLabel:
+      moderationMeta.publishEligibility === "public" && moderationMeta.imageModerationStatus === "approved"
+        ? "允许公开"
+        : "仅自己可见",
+    moderationReason: moderationMeta.moderationReason || "-"
   };
 }
 
@@ -202,6 +211,15 @@ export default async function AdminShowcasePage() {
                 <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
                   {formatShowcaseDisplayControl(item.showcaseControl)}
                 </span>
+                <span
+                  className={`rounded-full px-3 py-1 text-xs font-bold ${
+                    item.moderationLabel === "允许公开"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-amber-100 text-amber-800"
+                  }`}
+                >
+                  {item.moderationLabel}
+                </span>
               </div>
               <h2 className="mt-3 text-lg font-semibold text-slate-900">{item.title}</h2>
               <p className="mt-2 text-sm font-bold text-slate-900">{item.judgement}</p>
@@ -210,6 +228,7 @@ export default async function AdminShowcasePage() {
                 <p className="text-xs font-medium text-slate-500">当前建议</p>
                 <p className="mt-1 text-sm font-semibold text-violet-800">{item.nextSuggestion}</p>
                 <p className="mt-2 text-xs text-slate-500">最近更新：{item.updatedAt}</p>
+                <p className="mt-2 text-xs text-slate-500">审核原因码：{item.moderationReason}</p>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
