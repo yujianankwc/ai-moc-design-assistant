@@ -225,3 +225,47 @@ export function getBlockedGenerationMessage() {
 export function getPrivateDraftMessage() {
   return PRIVATE_DRAFT_MESSAGE;
 }
+
+export function formatQuickModerationReasonLabel(reason: QuickModerationReason | "" | null | undefined) {
+  if (reason === "sexual_content") return "疑似露骨性内容";
+  if (reason === "minor_risk") return "疑似涉及未成年人风险";
+  if (reason === "explicit_nudity") return "疑似涉及裸露内容";
+  if (reason === "unsafe_reference_image") return "参考图不适合公开";
+  if (reason === "policy_blocked_publish") return "命中平台禁止公开规则";
+  if (reason === "image_required_for_public_publish") return "还缺少可公开的预览图";
+  if (reason === "image_review_unavailable") return "图片审核暂不可用";
+  if (reason === "image_upstream_safety_block") return "图片被上游安全策略拦截";
+  return "未命中明确拦截原因";
+}
+
+export function describeQuickModerationState(input: Partial<QuickModerationMeta> | null | undefined) {
+  const moderationStatus = input?.moderationStatus ?? "allow";
+  const publishEligibility = input?.publishEligibility ?? "private_draft";
+  const imageModerationStatus = input?.imageModerationStatus ?? "pending";
+  const moderationReason = input?.moderationReason ?? "";
+
+  if (publishEligibility === "public" && imageModerationStatus === "approved") {
+    return {
+      label: "允许公开",
+      tone: "public" as const,
+      summary: "审核已经通过，这条内容可以进入首页和广场的公开展示池。",
+      detail: moderationReason ? formatQuickModerationReasonLabel(moderationReason) : "当前没有命中公开限制。"
+    };
+  }
+
+  if (moderationStatus === "block" || imageModerationStatus === "blocked") {
+    return {
+      label: "审核拦截",
+      tone: "blocked" as const,
+      summary: "这条内容当前只能自己看，暂时不会进入首页和广场。",
+      detail: formatQuickModerationReasonLabel(moderationReason)
+    };
+  }
+
+  return {
+    label: "待补全后公开",
+    tone: "pending" as const,
+    summary: "这条内容还没达到公开条件，通常是还缺图或还没完成最终复核。",
+    detail: moderationReason ? formatQuickModerationReasonLabel(moderationReason) : "补完公开所需信息后可以再试。"
+  };
+}

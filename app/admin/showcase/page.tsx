@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AdminShowcaseControl from "@/components/admin-showcase-control";
+import { describeQuickModerationState } from "@/lib/content-moderation";
 import { formatShowcaseDisplayControl } from "@/lib/showcase-display-control";
 import {
   getIntentStatusExplanation,
@@ -38,6 +39,8 @@ type ShowcaseOpsCard = {
   latestInteractionAt: string | null;
   linkedIntentId: string;
   moderationLabel: string;
+  moderationSummary: string;
+  moderationDetail: string;
   moderationReason: string;
 };
 
@@ -53,6 +56,7 @@ function mapProjectToShowcaseOpsCard(
     watchers: 0,
     latestInteractionAt: null
   };
+  const moderationState = describeQuickModerationState(moderationMeta);
 
   return {
     id: project.id,
@@ -81,10 +85,9 @@ function mapProjectToShowcaseOpsCard(
     watchers: stats.watchers,
     latestInteractionAt: stats.latestInteractionAt,
     linkedIntentId: linkedIntent.id,
-    moderationLabel:
-      moderationMeta.publishEligibility === "public" && moderationMeta.imageModerationStatus === "approved"
-        ? "允许公开"
-        : "仅自己可见",
+    moderationLabel: moderationState.label,
+    moderationSummary: moderationState.summary,
+    moderationDetail: moderationState.detail,
     moderationReason: moderationMeta.moderationReason || "-"
   };
 }
@@ -215,7 +218,9 @@ export default async function AdminShowcasePage() {
                   className={`rounded-full px-3 py-1 text-xs font-bold ${
                     item.moderationLabel === "允许公开"
                       ? "bg-emerald-100 text-emerald-800"
-                      : "bg-amber-100 text-amber-800"
+                      : item.moderationLabel === "审核拦截"
+                        ? "bg-rose-100 text-rose-800"
+                        : "bg-amber-100 text-amber-800"
                   }`}
                 >
                   {item.moderationLabel}
@@ -228,7 +233,12 @@ export default async function AdminShowcasePage() {
                 <p className="text-xs font-medium text-slate-500">当前建议</p>
                 <p className="mt-1 text-sm font-semibold text-violet-800">{item.nextSuggestion}</p>
                 <p className="mt-2 text-xs text-slate-500">最近更新：{item.updatedAt}</p>
-                <p className="mt-2 text-xs text-slate-500">审核原因码：{item.moderationReason}</p>
+                <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
+                  <p className="text-xs font-medium text-slate-500">公开状态说明</p>
+                  <p className="mt-1 text-sm font-semibold text-slate-900">{item.moderationSummary}</p>
+                  <p className="mt-1 text-xs text-slate-500">{item.moderationDetail}</p>
+                  <p className="mt-2 text-[11px] text-slate-400">审核原因码：{item.moderationReason}</p>
+                </div>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-3">
                 <div className="rounded-2xl border border-slate-200 bg-white p-4">
